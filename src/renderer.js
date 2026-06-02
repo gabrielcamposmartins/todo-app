@@ -1,0 +1,1050 @@
+// ============================================================
+//  Estado
+// ============================================================
+let state = { config: null, tasks: [] };
+let editingId = null; // id da tarefa em edição (null = nova)
+let draftAttachments = []; // anexos do formulário atual
+const expandedIds = new Set(); // cards expandidos (clique expande, não edita)
+
+const $ = (sel) => document.querySelector(sel);
+
+// ============================================================
+//  Perfis de cores (paletas)
+// ============================================================
+const THEMES = {
+  midnight: {
+    name: 'Azul Noturno',
+    accent: '#4c8dff',
+    accentRgb: '76, 141, 255',
+    text: '#f4f6fb',
+    textDim: '#aab2c5',
+    bg: '20, 24, 34',
+  },
+  nebula: {
+    name: 'Nébula (Violeta)',
+    accent: '#a855f7',
+    accentRgb: '168, 85, 247',
+    text: '#f5f0fb',
+    textDim: '#bcb0cf',
+    bg: '26, 20, 38',
+  },
+  emerald: {
+    name: 'Esmeralda',
+    accent: '#10b981',
+    accentRgb: '16, 185, 129',
+    text: '#eefcf5',
+    textDim: '#a3c2b5',
+    bg: '14, 26, 22',
+  },
+  sunset: {
+    name: 'Pôr do Sol (Âmbar)',
+    accent: '#f59e0b',
+    accentRgb: '245, 158, 11',
+    text: '#fdf6ec',
+    textDim: '#c9b79c',
+    bg: '30, 22, 15',
+  },
+  rose: {
+    name: 'Rosé',
+    accent: '#ec4899',
+    accentRgb: '236, 72, 153',
+    text: '#fdeef5',
+    textDim: '#caa9b8',
+    bg: '30, 17, 24',
+  },
+  ocean: {
+    name: 'Oceano (Ciano)',
+    accent: '#06b6d4',
+    accentRgb: '6, 182, 212',
+    text: '#ecfafe',
+    textDim: '#9bb9c2',
+    bg: '12, 26, 31',
+  },
+  crimson: {
+    name: 'Carmesim',
+    accent: '#ef4444',
+    accentRgb: '239, 68, 68',
+    text: '#fdeeee',
+    textDim: '#c7a8a8',
+    bg: '28, 17, 17',
+  },
+  graphite: {
+    name: 'Grafite (Claro)',
+    accent: '#2563eb',
+    accentRgb: '37, 99, 235',
+    text: '#1b2230',
+    textDim: '#5a6473',
+    bg: '236, 239, 245',
+  },
+};
+
+function applyTheme() {
+  const t = THEMES[state.config.theme] || THEMES.midnight;
+  const root = document.documentElement.style;
+  root.setProperty('--accent', t.accent);
+  root.setProperty('--accent-rgb', t.accentRgb);
+  root.setProperty('--text', t.text);
+  root.setProperty('--text-dim', t.textDim);
+  root.setProperty('--bg', t.bg);
+}
+
+// ============================================================
+//  Click-through: liga a captura do mouse só sobre o painel/bolha
+// ============================================================
+let interactiveNow = false;
+let lastMouse = { x: -1, y: -1 };
+
+function updateInteractivity(x, y) {
+  let over = false;
+  const el = document.elementFromPoint(x, y);
+  if (state.config && state.config.displayMode === 'passive') {
+    // No modo passivo só o botão de sair captura o mouse; o resto atravessa.
+    over = !!(el && el.closest('.passive-exit'));
+  } else {
+    over = !!(el && el.closest('.interactive:not(.hidden)'));
+  }
+  if (over !== interactiveNow) {
+    interactiveNow = over;
+    window.api.setInteractive(over);
+  }
+}
+
+// Reavalia o click-through na posição atual do mouse, forçando o envio do
+// comando (usado ao trocar de modo, quando o estado precisa ser corrigido).
+function refreshInteractivity() {
+  interactiveNow = null; // sentinela: garante que updateInteractivity reenvie
+  updateInteractivity(lastMouse.x, lastMouse.y);
+}
+
+window.addEventListener('mousemove', (e) => {
+  lastMouse = { x: e.clientX, y: e.clientY };
+  if (dragging || resizing) return; // a janela já está capturando o mouse
+  updateInteractivity(e.clientX, e.clientY);
+});
+
+window.addEventListener('mouseleave', () => {
+  if (interactiveNow) {
+    interactiveNow = false;
+    window.api.setInteractive(false);
+  }
+});
+
+// ============================================================
+//  Persistência
+// ============================================================
+async function persist() {
+  await window.api.saveData(state);
+}
+
+// ============================================================
+//  Navegação entre telas
+// ============================================================
+function showView(name) {
+  $('#view-list').classList.toggle('hidden', name !== 'list');
+  $('#view-form').classList.toggle('hidden', name !== 'form');
+  $('#view-settings').classList.toggle('hidden', name !== 'settings');
+}
+
+// ============================================================
+//  Aparência (opacidade / largura / modos)
+// ============================================================
+function applyAppearance() {
+  const { opacity, width, height, cardMode } = state.config;
+  document.documentElement.style.setProperty('--panel-opacity', opacity);
+  const panel = $('#panel');
+  panel.style.width = `${width}px`;
+  // No modo passivo a altura acompanha os cards (ignora altura fixa do resize).
+  const passive = state.config.displayMode === 'passive';
+  panel.style.height = !passive && height ? `${height}px` : '';
+  document.body.classList.toggle('cards-compact', cardMode === 'compact');
+  $('#btn-cardmode').classList.toggle('toggled', cardMode === 'compact');
+  applyPosition();
+}
+
+// Aplica a proteção contra captura: se NÃO deve aparecer na transmissão,
+// ativa a proteção (o conteúdo some em gravações/streams).
+function applyStreamVisibility() {
+  window.api.setContentProtection(!state.config.showWhenStreaming);
+}
+
+function applyPosition() {
+  const panel = $('#panel');
+  const pos = state.config.position;
+  if (pos && Number.isFinite(pos.left) && Number.isFinite(pos.top)) {
+    panel.style.right = 'auto';
+    panel.style.left = `${pos.left}px`;
+    panel.style.top = `${pos.top}px`;
+  } else {
+    panel.style.left = 'auto';
+    panel.style.right = '12px';
+    panel.style.top = '12px';
+  }
+}
+
+// Atualiza o badge vermelho da bolha com o total de tarefas não concluídas.
+function updateBubbleBadge() {
+  const pending = state.tasks.filter((t) => !t.done).length;
+  const badge = $('#bubble-badge');
+  badge.textContent = pending > 99 ? '99+' : String(pending);
+  badge.classList.toggle('hidden', pending === 0);
+}
+
+// ============================================================
+//  Modos de exibição: normal | passive | collapsed
+// ============================================================
+function setDisplayMode(mode) {
+  // Ao recolher, posiciona a bolha no canto da tela onde o painel estava.
+  if (mode === 'collapsed') positionBubbleToPanel();
+
+  state.config.displayMode = mode;
+  document.body.classList.toggle('mode-passive', mode === 'passive');
+  $('#panel').classList.toggle('hidden', mode === 'collapsed');
+  $('#bubble').classList.toggle('hidden', mode !== 'collapsed');
+  $('#btn-passive').classList.toggle('toggled', mode === 'passive');
+  if (mode === 'passive') showView('list');
+  // Ajusta a altura: automática (abraça os cards) no passivo; fixa no normal.
+  applyAppearance();
+  // Reavalia click-through imediatamente na posição atual do mouse.
+  refreshInteractivity();
+  persist();
+}
+
+// Coloca a bolha respeitando a altura (vertical) em que o painel estava,
+// alinhada ao lado (esquerda/direita) correspondente.
+function positionBubbleToPanel() {
+  const rect = $('#panel').getBoundingClientRect();
+  const bubble = $('#bubble');
+  const SIZE = 46; // tamanho da bolha
+  const EDGE = 6; // folga das bordas da tela
+  const clamp = (v, max) => Math.max(EDGE, Math.min(v, max - SIZE - EDGE));
+
+  // Vertical: mesma altura do topo do painel (limitada à tela).
+  bubble.style.bottom = 'auto';
+  bubble.style.top = `${clamp(rect.top, window.innerHeight)}px`;
+
+  // Horizontal: lado correspondente, alinhado à borda do painel.
+  const cx = rect.left + rect.width / 2;
+  if (cx > window.innerWidth / 2) {
+    bubble.style.left = 'auto';
+    bubble.style.right = `${clamp(window.innerWidth - rect.right, window.innerWidth)}px`;
+  } else {
+    bubble.style.right = 'auto';
+    bubble.style.left = `${clamp(rect.left, window.innerWidth)}px`;
+  }
+}
+
+// Permite rolar as abas horizontalmente com a roda do mouse.
+function bindTabsWheel() {
+  ['#tabs-profile', '#tabs-project'].forEach((sel) => {
+    const nav = $(sel);
+    nav.addEventListener(
+      'wheel',
+      (e) => {
+        if (nav.scrollWidth <= nav.clientWidth) return;
+        e.preventDefault();
+        nav.scrollLeft += e.deltaY + e.deltaX;
+      },
+      { passive: false }
+    );
+  });
+}
+
+// ============================================================
+//  Perfis e projetos (abas)
+// ============================================================
+function activeProfile() {
+  return (
+    state.config.profiles.find((p) => p.id === state.config.activeProfileId) ||
+    state.config.profiles[0]
+  );
+}
+
+function renderTabs() {
+  // Perfis
+  const navP = $('#tabs-profile');
+  navP.innerHTML = '';
+  state.config.profiles.forEach((p) => {
+    const b = document.createElement('button');
+    b.className = 'tab' + (p.id === state.config.activeProfileId ? ' active' : '');
+    b.textContent = p.name;
+    b.addEventListener('click', () => {
+      state.config.activeProfileId = p.id;
+      state.config.activeProjectId = p.projects[0].id;
+      persist();
+      renderTabs();
+      renderList();
+    });
+    navP.appendChild(b);
+  });
+
+  // Projetos do perfil ativo
+  const navJ = $('#tabs-project');
+  navJ.innerHTML = '';
+  activeProfile().projects.forEach((pj) => {
+    const b = document.createElement('button');
+    b.className = 'tab' + (pj.id === state.config.activeProjectId ? ' active' : '');
+    b.textContent = pj.name;
+    b.addEventListener('click', () => {
+      state.config.activeProjectId = pj.id;
+      persist();
+      renderTabs();
+      renderList();
+    });
+    navJ.appendChild(b);
+  });
+}
+
+// ============================================================
+//  Prioridades
+// ============================================================
+function getPriority(id) {
+  return (
+    state.config.priorities.find((p) => p.id === id) ||
+    state.config.priorities[0]
+  );
+}
+
+function fillPrioritySelect() {
+  const sel = $('#f-priority');
+  sel.innerHTML = '';
+  state.config.priorities.forEach((p) => {
+    const opt = document.createElement('option');
+    opt.value = p.id;
+    opt.textContent = p.name;
+    sel.appendChild(opt);
+  });
+}
+
+// ============================================================
+//  Ordenação + filtro por perfil/projeto
+// ============================================================
+function visibleTasks() {
+  const { activeProfileId, activeProjectId, sort } = state.config;
+  const mult = sort.dir === 'desc' ? -1 : 1;
+  const prioWeight = (id) => {
+    const p = getPriority(id);
+    return p ? p.weight : 999;
+  };
+
+  return state.tasks
+    .filter(
+      (t) => t.profileId === activeProfileId && t.projectId === activeProjectId
+    )
+    .sort((a, b) => {
+      let cmp = 0;
+      switch (sort.field) {
+        case 'priority':
+          cmp = prioWeight(a.priorityId) - prioWeight(b.priorityId);
+          break;
+        case 'deadline': {
+          const av = a.deadline ? new Date(a.deadline).getTime() : Infinity;
+          const bv = b.deadline ? new Date(b.deadline).getTime() : Infinity;
+          cmp = av - bv;
+          break;
+        }
+        case 'name':
+          cmp = a.name.localeCompare(b.name, 'pt-BR');
+          break;
+        case 'created':
+          cmp = a.createdAt - b.createdAt;
+          break;
+      }
+      if (cmp === 0) cmp = prioWeight(a.priorityId) - prioWeight(b.priorityId);
+      if (cmp === 0) cmp = a.createdAt - b.createdAt;
+      return cmp * mult;
+    });
+}
+
+// ============================================================
+//  Renderização da lista de tarefas
+// ============================================================
+function formatDeadline(iso) {
+  if (!iso) return null;
+  const d = new Date(iso);
+  const opts = { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' };
+  return { label: d.toLocaleString('pt-BR', opts), late: d.getTime() < Date.now() };
+}
+
+// Cria um botão de ação do card com ícone + rótulo (rótulo some no compacto).
+function makeActionBtn(icon, label, extraClass, handler) {
+  const btn = document.createElement('button');
+  btn.className = 'icon-btn' + (extraClass ? ' ' + extraClass : '');
+  const ico = document.createElement('span');
+  ico.className = 'ico';
+  ico.textContent = icon;
+  const lbl = document.createElement('span');
+  lbl.className = 'lbl';
+  lbl.textContent = label;
+  btn.append(ico, lbl);
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation(); // não dispara o expandir do card
+    handler();
+  });
+  return btn;
+}
+
+function renderList() {
+  const ul = $('#task-list');
+  ul.innerHTML = '';
+  const tasks = visibleTasks();
+
+  $('#empty-msg').classList.toggle('hidden', tasks.length > 0);
+  updateBubbleBadge();
+
+  tasks.forEach((task) => {
+    const prio = getPriority(task.priorityId);
+    const li = document.createElement('li');
+    li.className = 'card' + (task.done ? ' done' : '');
+    if (expandedIds.has(task.id)) li.classList.add('expanded');
+    li.style.setProperty('--card-color', prio.color);
+
+    const top = document.createElement('div');
+    top.className = 'card__top';
+
+    const title = document.createElement('span');
+    title.className = 'card__title';
+    title.textContent = task.name;
+
+    const badge = document.createElement('span');
+    badge.className = 'card__badge';
+    badge.style.background = prio.color;
+    badge.textContent = prio.name;
+
+    top.append(title, badge);
+    li.appendChild(top);
+
+    if (task.description) {
+      const desc = document.createElement('div');
+      desc.className = 'card__desc';
+      desc.textContent = task.description;
+      li.appendChild(desc);
+    }
+
+    const meta = document.createElement('div');
+    meta.className = 'card__meta';
+    const dl = formatDeadline(task.deadline);
+    if (dl) {
+      const span = document.createElement('span');
+      span.className = dl.late && !task.done ? 'late' : '';
+      span.textContent = `🕑 ${dl.label}${dl.late && !task.done ? ' (atrasada)' : ''}`;
+      meta.appendChild(span);
+    }
+    if (task.attachments && task.attachments.length) {
+      const span = document.createElement('span');
+      span.textContent = `📎 ${task.attachments.length}`;
+      meta.appendChild(span);
+    }
+    if (meta.childNodes.length) li.appendChild(meta);
+
+    // Ações (escondidas no modo passivo via CSS)
+    const actions = document.createElement('div');
+    actions.className = 'card__actions';
+    actions.append(
+      makeActionBtn(task.done ? '↺' : '✓', task.done ? 'Reabrir' : 'Concluir', '', () => {
+        task.done = !task.done;
+        persist();
+        renderList();
+      }),
+      makeActionBtn('✎', 'Editar', '', () => openForm(task.id)),
+      makeActionBtn('🗑', 'Excluir', 'icon-btn--danger', () => deleteTask(task.id))
+    );
+    li.appendChild(actions);
+
+    // Clique no card => EXPANDE/recolhe (não edita). Inativo no modo passivo.
+    li.addEventListener('click', () => {
+      if (state.config.displayMode === 'passive') return;
+      if (expandedIds.has(task.id)) expandedIds.delete(task.id);
+      else expandedIds.add(task.id);
+      li.classList.toggle('expanded');
+    });
+
+    ul.appendChild(li);
+  });
+}
+
+// ============================================================
+//  Formulário de tarefa
+// ============================================================
+function renderDraftAttachments() {
+  const ul = $('#attach-list');
+  ul.innerHTML = '';
+  draftAttachments.forEach((att, idx) => {
+    const li = document.createElement('li');
+    li.className = 'attach-item';
+
+    const name = document.createElement('span');
+    name.textContent = att.name;
+    name.title = att.name;
+    name.style.cursor = 'pointer';
+    name.addEventListener('click', () => window.api.openAttachment(att.path));
+
+    const rm = document.createElement('button');
+    rm.className = 'icon-btn icon-btn--danger';
+    rm.textContent = '✕';
+    rm.addEventListener('click', () => {
+      draftAttachments.splice(idx, 1);
+      renderDraftAttachments();
+    });
+
+    li.append(name, rm);
+    ul.appendChild(li);
+  });
+}
+
+function openForm(id = null) {
+  editingId = id;
+  fillPrioritySelect();
+
+  if (id) {
+    const t = state.tasks.find((x) => x.id === id);
+    $('#form-title').textContent = 'Editar tarefa';
+    $('#f-name').value = t.name;
+    $('#f-priority').value = t.priorityId;
+    $('#f-desc').value = t.description || '';
+    $('#f-deadline').value = t.deadline ? toLocalInput(t.deadline) : '';
+    draftAttachments = t.attachments ? [...t.attachments] : [];
+  } else {
+    $('#form-title').textContent = 'Nova tarefa';
+    $('#task-form').reset();
+    $('#f-priority').value = state.config.priorities[0]?.id || '';
+    draftAttachments = [];
+  }
+
+  renderDraftAttachments();
+  showView('form');
+  setTimeout(() => $('#f-name').focus(), 50);
+}
+
+// ISO -> valor de <input datetime-local> no fuso local
+function toLocalInput(iso) {
+  const d = new Date(iso);
+  const off = d.getTimezoneOffset();
+  return new Date(d.getTime() - off * 60000).toISOString().slice(0, 16);
+}
+
+async function submitForm(e) {
+  e.preventDefault();
+  const name = $('#f-name').value.trim();
+  if (!name) return;
+
+  const deadlineVal = $('#f-deadline').value;
+  const payload = {
+    name,
+    priorityId: $('#f-priority').value,
+    description: $('#f-desc').value.trim(),
+    deadline: deadlineVal ? new Date(deadlineVal).toISOString() : null,
+    attachments: [...draftAttachments],
+  };
+
+  if (editingId) {
+    const t = state.tasks.find((x) => x.id === editingId);
+    const kept = new Set(payload.attachments.map((a) => a.path));
+    (t.attachments || []).forEach((a) => {
+      if (!kept.has(a.path)) window.api.deleteAttachment(a.path);
+    });
+    Object.assign(t, payload);
+  } else {
+    state.tasks.push({
+      id: `t-${Date.now()}-${Math.floor(Math.random() * 1e4)}`,
+      ...payload,
+      profileId: state.config.activeProfileId,
+      projectId: state.config.activeProjectId,
+      done: false,
+      createdAt: Date.now(),
+    });
+  }
+
+  await persist();
+  renderList();
+  showView('list');
+}
+
+async function deleteTask(id) {
+  const t = state.tasks.find((x) => x.id === id);
+  if (!t) return;
+  (t.attachments || []).forEach((a) => window.api.deleteAttachment(a.path));
+  state.tasks = state.tasks.filter((x) => x.id !== id);
+  expandedIds.delete(id);
+  await persist();
+  renderList();
+}
+
+// ============================================================
+//  Configurações
+// ============================================================
+function renderSettings() {
+  renderThemeOptions();
+  $('#s-opacity').value = state.config.opacity;
+  $('#s-cardmode').value = state.config.cardMode;
+  $('#s-stream').checked = state.config.showWhenStreaming;
+  $('#s-sort-field').value = state.config.sort.field;
+  $('#s-sort-dir').value = state.config.sort.dir;
+  renderPriorityEditor();
+  renderProfileEditor();
+}
+
+function setTheme(id) {
+  state.config.theme = id;
+  applyTheme();
+  persist();
+  renderThemeOptions();
+}
+
+function renderThemeOptions() {
+  // Select
+  const sel = $('#s-theme');
+  sel.innerHTML = '';
+  Object.entries(THEMES).forEach(([id, t]) => {
+    const opt = document.createElement('option');
+    opt.value = id;
+    opt.textContent = t.name;
+    sel.appendChild(opt);
+  });
+  sel.value = state.config.theme;
+
+  // Swatches de pré-visualização
+  const box = $('#theme-swatches');
+  box.innerHTML = '';
+  Object.entries(THEMES).forEach(([id, t]) => {
+    const sw = document.createElement('div');
+    sw.className = 'swatch' + (id === state.config.theme ? ' active' : '');
+    sw.title = t.name;
+    sw.style.background = `rgb(${t.bg})`;
+    sw.style.setProperty('--sw-accent', t.accent);
+    sw.addEventListener('click', () => setTheme(id));
+    box.appendChild(sw);
+  });
+}
+
+function renderPriorityEditor() {
+  const ul = $('#prio-list');
+  ul.innerHTML = '';
+  state.config.priorities.forEach((p, idx) => {
+    const li = document.createElement('li');
+    li.className = 'prio-item';
+
+    const color = document.createElement('input');
+    color.type = 'color';
+    color.value = p.color;
+    color.addEventListener('input', () => {
+      p.color = color.value;
+      persist();
+      renderList();
+    });
+
+    const name = document.createElement('input');
+    name.type = 'text';
+    name.value = p.name;
+    name.addEventListener('input', () => (p.name = name.value));
+    name.addEventListener('change', () => {
+      persist();
+      fillPrioritySelect();
+      renderList();
+    });
+
+    const orderBtns = document.createElement('div');
+    orderBtns.className = 'order-btns';
+    const up = document.createElement('button');
+    up.textContent = '▲';
+    up.addEventListener('click', () => movePriority(idx, -1));
+    const down = document.createElement('button');
+    down.textContent = '▼';
+    down.addEventListener('click', () => movePriority(idx, 1));
+    orderBtns.append(up, down);
+
+    const del = document.createElement('button');
+    del.className = 'icon-btn icon-btn--danger';
+    del.textContent = '✕';
+    del.addEventListener('click', () => {
+      if (state.config.priorities.length <= 1) return;
+      state.config.priorities.splice(idx, 1);
+      reweightPriorities();
+      persist();
+      renderSettings();
+      fillPrioritySelect();
+      renderList();
+    });
+
+    li.append(color, name, orderBtns, del);
+    ul.appendChild(li);
+  });
+}
+
+function reweightPriorities() {
+  state.config.priorities.forEach((p, i) => (p.weight = i + 1));
+}
+
+function movePriority(idx, delta) {
+  const arr = state.config.priorities;
+  const ni = idx + delta;
+  if (ni < 0 || ni >= arr.length) return;
+  [arr[idx], arr[ni]] = [arr[ni], arr[idx]];
+  reweightPriorities();
+  persist();
+  renderSettings();
+  fillPrioritySelect();
+  renderList();
+}
+
+// ---------- Editor de perfis / projetos ----------
+function renderProfileEditor() {
+  const box = $('#profile-editor');
+  box.innerHTML = '';
+  state.config.profiles.forEach((profile) => {
+    const block = document.createElement('div');
+    block.className = 'profile-block';
+
+    const head = document.createElement('div');
+    head.className = 'profile-block__head';
+    const pName = document.createElement('input');
+    pName.type = 'text';
+    pName.value = profile.name;
+    pName.addEventListener('input', () => (profile.name = pName.value));
+    pName.addEventListener('change', () => {
+      persist();
+      renderTabs();
+    });
+
+    const delP = document.createElement('button');
+    delP.className = 'icon-btn icon-btn--danger';
+    delP.textContent = '✕ perfil';
+    delP.addEventListener('click', () => {
+      if (state.config.profiles.length <= 1) return;
+      removeTasksOf(profile.id, null);
+      state.config.profiles = state.config.profiles.filter((p) => p.id !== profile.id);
+      if (state.config.activeProfileId === profile.id) {
+        state.config.activeProfileId = state.config.profiles[0].id;
+        state.config.activeProjectId = state.config.profiles[0].projects[0].id;
+      }
+      persist();
+      renderSettings();
+      renderTabs();
+      renderList();
+    });
+    head.append(pName, delP);
+    block.appendChild(head);
+
+    profile.projects.forEach((proj) => {
+      const row = document.createElement('div');
+      row.className = 'project-row';
+      const jName = document.createElement('input');
+      jName.type = 'text';
+      jName.value = proj.name;
+      jName.addEventListener('input', () => (proj.name = jName.value));
+      jName.addEventListener('change', () => {
+        persist();
+        renderTabs();
+      });
+
+      const delJ = document.createElement('button');
+      delJ.className = 'icon-btn icon-btn--danger';
+      delJ.textContent = '✕';
+      delJ.addEventListener('click', () => {
+        if (profile.projects.length <= 1) return;
+        removeTasksOf(profile.id, proj.id);
+        profile.projects = profile.projects.filter((x) => x.id !== proj.id);
+        if (state.config.activeProjectId === proj.id) {
+          state.config.activeProjectId = profile.projects[0].id;
+        }
+        persist();
+        renderSettings();
+        renderTabs();
+        renderList();
+      });
+      row.append(jName, delJ);
+      block.appendChild(row);
+    });
+
+    const addJ = document.createElement('button');
+    addJ.className = 'btn btn--ghost add-project';
+    addJ.textContent = '+ projeto';
+    addJ.addEventListener('click', () => {
+      profile.projects.push({
+        id: `pj-${Date.now()}-${Math.floor(Math.random() * 1e4)}`,
+        name: `Projeto ${profile.projects.length + 1}`,
+      });
+      persist();
+      renderSettings();
+      renderTabs();
+    });
+    block.appendChild(addJ);
+
+    box.appendChild(block);
+  });
+}
+
+// Remove tarefas de um perfil (projId null) ou de um projeto específico.
+function removeTasksOf(profileId, projectId) {
+  state.tasks = state.tasks.filter((t) => {
+    const match =
+      t.profileId === profileId &&
+      (projectId === null || t.projectId === projectId);
+    if (match) (t.attachments || []).forEach((a) => window.api.deleteAttachment(a.path));
+    return !match;
+  });
+}
+
+// ============================================================
+//  Arraste para mover o app
+// ============================================================
+let dragging = false;
+let dragStart = null;
+let resizing = false;
+
+const MIN_W = 260;
+const MIN_H = 120;
+
+// Redimensiona o painel arrastando bordas/cantos (fora do modo passivo).
+function initResize() {
+  const panel = $('#panel');
+  let rs = null;
+
+  panel.querySelectorAll('.resizer').forEach((handle) => {
+    handle.addEventListener('mousedown', (e) => {
+      if (state.config.displayMode === 'passive') return;
+      const r = panel.getBoundingClientRect();
+      rs = {
+        dir: handle.dataset.dir,
+        x: e.clientX,
+        y: e.clientY,
+        left: r.left,
+        top: r.top,
+        w: r.width,
+        h: r.height,
+      };
+      // Fixa em left/top para que as bordas movam corretamente.
+      panel.style.right = 'auto';
+      panel.style.left = `${r.left}px`;
+      panel.style.top = `${r.top}px`;
+      panel.style.width = `${r.width}px`;
+      panel.style.height = `${r.height}px`;
+      resizing = true;
+      e.preventDefault();
+      e.stopPropagation();
+    });
+  });
+
+  window.addEventListener('mousemove', (e) => {
+    if (!rs) return;
+    const dx = e.clientX - rs.x;
+    const dy = e.clientY - rs.y;
+    let left = rs.left;
+    let top = rs.top;
+    let w = rs.w;
+    let h = rs.h;
+    const d = rs.dir;
+
+    if (d.includes('e')) w = rs.w + dx;
+    if (d.includes('s')) h = rs.h + dy;
+    if (d.includes('w')) {
+      w = rs.w - dx;
+      left = rs.left + dx;
+    }
+    if (d.includes('n')) {
+      h = rs.h - dy;
+      top = rs.top + dy;
+    }
+
+    // Largura/altura mínimas (ajustando a âncora quando puxado pela borda n/w).
+    if (w < MIN_W) {
+      if (d.includes('w')) left -= MIN_W - w;
+      w = MIN_W;
+    }
+    if (h < MIN_H) {
+      if (d.includes('n')) top -= MIN_H - h;
+      h = MIN_H;
+    }
+    // Mantém dentro da tela.
+    if (left < 0) {
+      w += left;
+      left = 0;
+    }
+    if (top < 0) {
+      h += top;
+      top = 0;
+    }
+    if (left + w > window.innerWidth) w = window.innerWidth - left;
+    if (top + h > window.innerHeight) h = window.innerHeight - top;
+
+    panel.style.left = `${left}px`;
+    panel.style.top = `${top}px`;
+    panel.style.width = `${w}px`;
+    panel.style.height = `${h}px`;
+  });
+
+  window.addEventListener('mouseup', () => {
+    if (!rs) return;
+    rs = null;
+    resizing = false;
+    state.config.width = Math.round(panel.offsetWidth);
+    state.config.height = Math.round(panel.offsetHeight);
+    state.config.position = {
+      left: Math.round(panel.offsetLeft),
+      top: Math.round(panel.offsetTop),
+    };
+    persist();
+    refreshInteractivity();
+  });
+}
+
+function initDrag() {
+  const grip = $('#drag-grip');
+  const panel = $('#panel');
+
+  grip.addEventListener('mousedown', (e) => {
+    const r = panel.getBoundingClientRect();
+    dragging = true;
+    dragStart = { x: e.clientX, y: e.clientY, left: r.left, top: r.top };
+    panel.style.right = 'auto';
+    panel.style.left = `${r.left}px`;
+    panel.style.top = `${r.top}px`;
+    e.preventDefault();
+  });
+
+  window.addEventListener('mousemove', (e) => {
+    if (!dragging) return;
+    const pw = panel.offsetWidth;
+    const ph = panel.offsetHeight;
+    let nl = dragStart.left + (e.clientX - dragStart.x);
+    let nt = dragStart.top + (e.clientY - dragStart.y);
+    nl = Math.max(0, Math.min(nl, window.innerWidth - pw));
+    nt = Math.max(0, Math.min(nt, window.innerHeight - ph));
+    panel.style.left = `${nl}px`;
+    panel.style.top = `${nt}px`;
+  });
+
+  window.addEventListener('mouseup', () => {
+    if (!dragging) return;
+    dragging = false;
+    state.config.position = {
+      left: parseInt(panel.style.left, 10),
+      top: parseInt(panel.style.top, 10),
+    };
+    persist();
+  });
+}
+
+// ============================================================
+//  Bind de eventos
+// ============================================================
+function bindEvents() {
+  $('#btn-add').addEventListener('click', () => openForm(null));
+  $('#btn-cancel').addEventListener('click', () => showView('list'));
+  $('#task-form').addEventListener('submit', submitForm);
+
+  $('#btn-attach').addEventListener('click', async () => {
+    const added = await window.api.pickAttachments();
+    draftAttachments.push(...added);
+    renderDraftAttachments();
+  });
+
+  $('#btn-cardmode').addEventListener('click', () => {
+    state.config.cardMode = state.config.cardMode === 'compact' ? 'detailed' : 'compact';
+    applyAppearance();
+    persist();
+  });
+
+  $('#btn-passive').addEventListener('click', () => setDisplayMode('passive'));
+  $('#passive-exit').addEventListener('click', () => setDisplayMode('normal'));
+
+  $('#btn-settings').addEventListener('click', () => {
+    renderSettings();
+    showView('settings');
+  });
+  $('#btn-settings-close').addEventListener('click', () => showView('list'));
+
+  $('#btn-collapse').addEventListener('click', () => setDisplayMode('collapsed'));
+  $('#bubble').addEventListener('click', () => setDisplayMode('normal'));
+  $('#btn-quit').addEventListener('click', () => window.api.quit());
+
+  // Aparência ao vivo
+  $('#s-opacity').addEventListener('input', (e) => {
+    state.config.opacity = parseFloat(e.target.value);
+    applyAppearance();
+  });
+  $('#s-opacity').addEventListener('change', persist);
+
+  $('#btn-reset-size').addEventListener('click', () => {
+    state.config.width = 380;
+    state.config.height = null;
+    state.config.position = null;
+    applyAppearance();
+    persist();
+  });
+
+  $('#s-theme').addEventListener('change', (e) => setTheme(e.target.value));
+
+  $('#s-cardmode').addEventListener('change', (e) => {
+    state.config.cardMode = e.target.value;
+    applyAppearance();
+    persist();
+  });
+
+  $('#s-stream').addEventListener('change', (e) => {
+    state.config.showWhenStreaming = e.target.checked;
+    applyStreamVisibility();
+    persist();
+  });
+
+  $('#s-sort-field').addEventListener('change', (e) => {
+    state.config.sort.field = e.target.value;
+    persist();
+    renderList();
+  });
+  $('#s-sort-dir').addEventListener('change', (e) => {
+    state.config.sort.dir = e.target.value;
+    persist();
+    renderList();
+  });
+
+  $('#btn-add-prio').addEventListener('click', () => {
+    const n = state.config.priorities.length + 1;
+    state.config.priorities.push({
+      id: `p-${Date.now()}`,
+      name: `Prioridade ${n}`,
+      color: '#7d7dff',
+      weight: n,
+    });
+    reweightPriorities();
+    persist();
+    renderSettings();
+    fillPrioritySelect();
+  });
+
+  $('#btn-add-profile').addEventListener('click', () => {
+    state.config.profiles.push({
+      id: `pf-${Date.now()}`,
+      name: `Perfil ${state.config.profiles.length + 1}`,
+      projects: [{ id: `pj-${Date.now()}`, name: 'Geral' }],
+    });
+    persist();
+    renderSettings();
+    renderTabs();
+  });
+
+  // Atalho global Ctrl+Alt+M: alterna passivo <-> normal.
+  window.api.onTogglePassive(() => {
+    setDisplayMode(state.config.displayMode === 'passive' ? 'normal' : 'passive');
+  });
+}
+
+// ============================================================
+//  Init
+// ============================================================
+async function init() {
+  state = await window.api.loadData();
+  applyTheme();
+  applyAppearance();
+  applyStreamVisibility();
+  fillPrioritySelect();
+  bindEvents();
+  initDrag();
+  initResize();
+  bindTabsWheel();
+  renderTabs();
+  renderList();
+  showView('list');
+  setDisplayMode(state.config.displayMode || 'normal');
+}
+
+init();

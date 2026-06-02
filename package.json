@@ -1,0 +1,45 @@
+{
+  "name": "todo-overlay",
+  "version": "0.1.0",
+  "description": "Overlay de lista de tarefas transparente, sempre no topo e com click-through.",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev",
+    "build": "electron-builder --dir",
+    "setup": "powershell -NoProfile -ExecutionPolicy Bypass -File build.ps1"
+  },
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.todooverlay.app",
+    "productName": "TODO-APP",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "src/**/*"
+    ],
+    "win": {
+      "target": [
+        "dir",
+        "nsis"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "TODO-APP",
+      "artifactName": "TODO-APP-Setup-${version}.${ext}"
+    }
+  }
+}

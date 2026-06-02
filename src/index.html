@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>To-Do Overlay</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <!-- Painel ancorado no canto superior direito.
+         Tudo fora de .panel é transparente e click-through. -->
+    <div id="panel" class="panel interactive">
+      <!-- Coluna principal (conteúdo) -->
+      <div class="panel__main">
+        <!-- Cabeçalho: abas de perfil + ações (sem título) -->
+        <header class="panel__header">
+          <!-- Abas de PERFIL (ex.: Trabalho, Financeiro) -->
+          <nav id="tabs-profile" class="tabs tabs--profile"></nav>
+
+          <div class="panel__row">
+            <!-- Sub-abas de PROJETO do perfil ativo -->
+            <nav id="tabs-project" class="tabs tabs--project"></nav>
+
+            <!-- Botões redondos de ação -->
+            <div class="panel__actions">
+              <button id="btn-add" class="round-btn round-btn--primary" title="Nova tarefa">+</button>
+              <button id="btn-cardmode" class="round-btn" title="Alternar modo do card (compacto/detalhado)">▤</button>
+              <button id="btn-passive" class="round-btn" title="Modo passivo (cards sem botões) — Ctrl+Alt+M para voltar">👁</button>
+              <button id="btn-settings" class="round-btn" title="Configurações">⚙</button>
+              <button id="btn-collapse" class="round-btn" title="Recolher">▾</button>
+            </div>
+          </div>
+        </header>
+
+        <!-- LISTA (tela de exibição) -->
+        <section id="view-list" class="view">
+          <ul id="task-list" class="task-list"></ul>
+          <p id="empty-msg" class="empty-msg">Nenhuma tarefa aqui. Clique em + para adicionar.</p>
+        </section>
+
+        <!-- FORMULÁRIO (cadastro/edição) -->
+        <section id="view-form" class="view hidden">
+          <form id="task-form" class="form">
+            <h2 id="form-title" class="form__heading">Nova tarefa</h2>
+
+            <label class="field">
+              <span>Nome</span>
+              <input type="text" id="f-name" required maxlength="120" placeholder="Ex.: Enviar relatório" />
+            </label>
+
+            <label class="field">
+              <span>Prioridade</span>
+              <select id="f-priority"></select>
+            </label>
+
+            <label class="field">
+              <span>Descrição</span>
+              <textarea id="f-desc" rows="3" placeholder="Detalhes da tarefa..."></textarea>
+            </label>
+
+            <label class="field">
+              <span>Prazo</span>
+              <input type="datetime-local" id="f-deadline" />
+            </label>
+
+            <div class="field">
+              <span>Anexos</span>
+              <button type="button" id="btn-attach" class="btn btn--ghost">+ Adicionar anexos</button>
+              <ul id="attach-list" class="attach-list"></ul>
+            </div>
+
+            <div class="form__buttons">
+              <button type="button" id="btn-cancel" class="btn btn--ghost">Cancelar</button>
+              <button type="submit" class="btn btn--primary">Salvar</button>
+            </div>
+          </form>
+        </section>
+
+        <!-- CONFIGURAÇÕES -->
+        <section id="view-settings" class="view hidden">
+          <div class="settings">
+            <h2 class="form__heading">Configurações</h2>
+
+            <div class="field">
+              <span>Perfil de cores</span>
+              <select id="s-theme"></select>
+              <div id="theme-swatches" class="theme-swatches"></div>
+            </div>
+
+            <div class="field">
+              <span>Transparência do painel</span>
+              <input type="range" id="s-opacity" min="0.2" max="1" step="0.05" />
+            </div>
+
+            <div class="field">
+              <span>Tamanho e posição</span>
+              <small class="hint">Arraste as bordas/cantos do painel para redimensionar e a alça ⠿ para mover.</small>
+              <button type="button" id="btn-reset-size" class="btn btn--ghost">Restaurar tamanho e posição</button>
+            </div>
+
+            <div class="field">
+              <span>Modo do card</span>
+              <select id="s-cardmode">
+                <option value="detailed">Detalhado</option>
+                <option value="compact">Compacto</option>
+              </select>
+            </div>
+
+            <label class="check-field">
+              <input type="checkbox" id="s-stream" />
+              <span>Aparecer ao compartilhar/streamar a tela</span>
+            </label>
+
+            <div class="field">
+              <span>Ordenar por</span>
+              <div class="row">
+                <select id="s-sort-field">
+                  <option value="priority">Prioridade</option>
+                  <option value="deadline">Prazo</option>
+                  <option value="name">Nome</option>
+                  <option value="created">Criação</option>
+                </select>
+                <select id="s-sort-dir">
+                  <option value="asc">Crescente</option>
+                  <option value="desc">Decrescente</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="field">
+              <span>Prioridades (nome, cor e ordem)</span>
+              <ul id="prio-list" class="prio-list"></ul>
+              <button type="button" id="btn-add-prio" class="btn btn--ghost">+ Nova prioridade</button>
+            </div>
+
+            <div class="field">
+              <span>Perfis e projetos (abas)</span>
+              <div id="profile-editor" class="profile-editor"></div>
+              <button type="button" id="btn-add-profile" class="btn btn--ghost">+ Novo perfil</button>
+            </div>
+
+            <div class="form__buttons">
+              <button type="button" id="btn-quit" class="btn btn--danger">Sair do app</button>
+              <button type="button" id="btn-settings-close" class="btn btn--primary">Concluir</button>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <!-- Alça à direita para mover o app manualmente -->
+      <div id="drag-grip" class="drag-grip" title="Arraste para mover o app">⠿</div>
+
+      <!-- Botão visível só no modo passivo: permanece clicável para sair dele -->
+      <button id="passive-exit" class="passive-exit" title="Sair do modo passivo">↩</button>
+
+      <!-- Handles de redimensionamento (ocultos no modo passivo) -->
+      <div class="resizer resizer-n" data-dir="n"></div>
+      <div class="resizer resizer-s" data-dir="s"></div>
+      <div class="resizer resizer-w" data-dir="w"></div>
+      <div class="resizer resizer-nw" data-dir="nw"></div>
+      <div class="resizer resizer-ne" data-dir="ne"></div>
+      <div class="resizer resizer-sw" data-dir="sw"></div>
+      <div class="resizer resizer-se" data-dir="se"></div>
+    </div>
+
+    <!-- Bolha para reabrir quando recolhido -->
+    <button id="bubble" class="bubble interactive hidden" title="Abrir tarefas">
+      ✓
+      <span id="bubble-badge" class="bubble__badge hidden">0</span>
+    </button>
+
+    <script src="renderer.js"></script>
+  </body>
+</html>
