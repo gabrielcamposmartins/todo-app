@@ -139,10 +139,22 @@ async function persist() {
 // ============================================================
 //  Navegação entre telas
 // ============================================================
+const VIEWS = {
+  list: 'view-list',
+  form: 'view-form',
+  settings: 'view-settings',
+  calendar: 'view-calendar',
+  notes: 'view-notes',
+  noteform: 'view-noteform',
+};
+
 function showView(name) {
-  $('#view-list').classList.toggle('hidden', name !== 'list');
-  $('#view-form').classList.toggle('hidden', name !== 'form');
-  $('#view-settings').classList.toggle('hidden', name !== 'settings');
+  Object.entries(VIEWS).forEach(([key, id]) => {
+    $('#' + id).classList.toggle('hidden', key !== name);
+  });
+  // Destaca o botão da barra correspondente à tela aberta.
+  $('#btn-calendar').classList.toggle('toggled', name === 'calendar');
+  $('#btn-notes').classList.toggle('toggled', name === 'notes');
 }
 
 // ============================================================
@@ -202,6 +214,8 @@ function setDisplayMode(mode) {
   $('#bubble').classList.toggle('hidden', mode !== 'collapsed');
   $('#btn-passive').classList.toggle('toggled', mode === 'passive');
   if (mode === 'passive') showView('list');
+  // Re-renderiza para aplicar o filtro (ex.: ocultar concluídas no passivo).
+  renderList();
   // Ajusta a altura: automática (abraça os cards) no passivo; fixa no normal.
   applyAppearance();
   // Reavalia click-through imediatamente na posição atual do mouse.
@@ -273,6 +287,8 @@ function renderTabs() {
       persist();
       renderTabs();
       renderList();
+      if (isCalendarOpen()) renderCalendar();
+      if (isNotesOpen()) renderNotes();
     });
     navP.appendChild(b);
   });
@@ -289,6 +305,8 @@ function renderTabs() {
       persist();
       renderTabs();
       renderList();
+      if (isCalendarOpen()) renderCalendar();
+      if (isNotesOpen()) renderNotes();
     });
     navJ.appendChild(b);
   });
@@ -318,8 +336,13 @@ function fillPrioritySelect() {
 // ============================================================
 //  Ordenação + filtro por perfil/projeto
 // ============================================================
+function isRecurring(t) {
+  return t.recurrence && t.recurrence !== 'none';
+}
+
 function visibleTasks() {
-  const { activeProfileId, activeProjectId, sort } = state.config;
+  const { activeProfileId, activeProjectId, sort, showRecurring, displayMode } =
+    state.config;
   const mult = sort.dir === 'desc' ? -1 : 1;
   const prioWeight = (id) => {
     const p = getPriority(id);
@@ -327,10 +350,12 @@ function visibleTasks() {
   };
 
   return state.tasks
-    .filter(
-      (t) => t.profileId === activeProfileId && t.projectId === activeProjectId
-    )
+    .filter((t) => t.profileId === activeProfileId && t.projectId === activeProjectId)
+    .filter((t) => showRecurring || !isRecurring(t)) // ocultar recorrentes (opção)
+    .filter((t) => displayMode !== 'passive' || !t.done) // sem concluídas no passivo
     .sort((a, b) => {
+      // Concluídas sempre vão para o final, independente da ordenação.
+      if (!!a.done !== !!b.done) return a.done ? 1 : -1;
       let cmp = 0;
       switch (sort.field) {
         case 'priority':
@@ -363,6 +388,41 @@ function formatDeadline(iso) {
   const d = new Date(iso);
   const opts = { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' };
   return { label: d.toLocaleString('pt-BR', opts), late: d.getTime() < Date.now() };
+}
+
+const RECUR_LABELS = {
+  hourly: 'Por hora',
+  daily: 'Diária',
+  monthly: 'Mensal',
+  yearly: 'Anual',
+};
+
+// Avança uma data segundo a recorrência.
+function advanceDate(date, recurrence) {
+  const d = new Date(date);
+  switch (recurrence) {
+    case 'hourly':
+      d.setHours(d.getHours() + 1);
+      break;
+    case 'daily':
+      d.setDate(d.getDate() + 1);
+      break;
+    case 'monthly':
+      d.setMonth(d.getMonth() + 1);
+      break;
+    case 'yearly':
+      d.setFullYear(d.getFullYear() + 1);
+      break;
+  }
+  return d;
+}
+
+// Concluir uma tarefa recorrente: reagenda para a próxima ocorrência e mantém ativa.
+function rollRecurring(task) {
+  let base = task.deadline ? new Date(task.deadline) : new Date();
+  if (base.getTime() < Date.now()) base = new Date(); // se atrasada, parte de agora
+  task.deadline = advanceDate(base, task.recurrence).toISOString();
+  task.done = false;
 }
 
 // Cria um botão de ação do card com ícone + rótulo (rótulo some no compacto).
@@ -434,6 +494,11 @@ function renderList() {
       span.textContent = `📎 ${task.attachments.length}`;
       meta.appendChild(span);
     }
+    if (isRecurring(task)) {
+      const span = document.createElement('span');
+      span.textContent = `🔁 ${RECUR_LABELS[task.recurrence] || ''}`;
+      meta.appendChild(span);
+    }
     if (meta.childNodes.length) li.appendChild(meta);
 
     // Ações (escondidas no modo passivo via CSS)
@@ -441,7 +506,12 @@ function renderList() {
     actions.className = 'card__actions';
     actions.append(
       makeActionBtn(task.done ? '↺' : '✓', task.done ? 'Reabrir' : 'Concluir', '', () => {
-        task.done = !task.done;
+        if (!task.done && isRecurring(task)) {
+          // Recorrente: reagenda para a próxima ocorrência (não fica concluída).
+          rollRecurring(task);
+        } else {
+          task.done = !task.done;
+        }
         persist();
         renderList();
       }),
@@ -502,11 +572,13 @@ function openForm(id = null) {
     $('#f-priority').value = t.priorityId;
     $('#f-desc').value = t.description || '';
     $('#f-deadline').value = t.deadline ? toLocalInput(t.deadline) : '';
+    $('#f-recurrence').value = t.recurrence || 'none';
     draftAttachments = t.attachments ? [...t.attachments] : [];
   } else {
     $('#form-title').textContent = 'Nova tarefa';
     $('#task-form').reset();
     $('#f-priority').value = state.config.priorities[0]?.id || '';
+    $('#f-recurrence').value = 'none';
     draftAttachments = [];
   }
 
@@ -533,6 +605,7 @@ async function submitForm(e) {
     priorityId: $('#f-priority').value,
     description: $('#f-desc').value.trim(),
     deadline: deadlineVal ? new Date(deadlineVal).toISOString() : null,
+    recurrence: $('#f-recurrence').value,
     attachments: [...draftAttachments],
   };
 
@@ -570,6 +643,359 @@ async function deleteTask(id) {
 }
 
 // ============================================================
+//  Calendário
+// ============================================================
+let calYear;
+let calMonth;
+let calSelected = null; // 'YYYY-MM-DD' do dia selecionado
+
+function ymd(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(
+    d.getDate()
+  ).padStart(2, '0')}`;
+}
+
+// Tarefas da seção/projeto ativos que possuem prazo (respeitando recorrentes).
+function calendarTasks() {
+  const { activeProfileId, activeProjectId, showRecurring } = state.config;
+  return state.tasks.filter(
+    (t) =>
+      t.profileId === activeProfileId &&
+      t.projectId === activeProjectId &&
+      t.deadline &&
+      (showRecurring || !isRecurring(t))
+  );
+}
+
+function renderCalendar() {
+  if (calYear === undefined) {
+    const now = new Date();
+    calYear = now.getFullYear();
+    calMonth = now.getMonth();
+  }
+
+  const first = new Date(calYear, calMonth, 1);
+  const title = first.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
+  $('#cal-title').textContent = title.charAt(0).toUpperCase() + title.slice(1);
+
+  // Agrupa tarefas por dia.
+  const byDay = {};
+  calendarTasks().forEach((t) => {
+    const key = ymd(new Date(t.deadline));
+    (byDay[key] = byDay[key] || []).push(t);
+  });
+
+  // Notas atribuídas a um dia e NÃO vinculadas a tarefa (para o indicador).
+  const notesByDay = {};
+  state.notes.forEach((n) => {
+    if (n.day && !n.taskId) (notesByDay[n.day] = notesByDay[n.day] || []).push(n);
+  });
+
+  const grid = $('#cal-grid');
+  grid.innerHTML = '';
+  const startDow = first.getDay(); // 0 = domingo
+  const start = new Date(calYear, calMonth, 1 - startDow);
+  const todayKey = ymd(new Date());
+
+  for (let i = 0; i < 42; i++) {
+    const d = new Date(start.getFullYear(), start.getMonth(), start.getDate() + i);
+    const key = ymd(d);
+    const cell = document.createElement('button');
+    cell.className = 'cal__cell';
+    if (d.getMonth() !== calMonth) cell.classList.add('other-month');
+    if (key === todayKey) cell.classList.add('today');
+    if (key === calSelected) cell.classList.add('selected');
+
+    const num = document.createElement('span');
+    num.className = 'cal__num';
+    num.textContent = d.getDate();
+    cell.appendChild(num);
+
+    const dayTasks = byDay[key] || [];
+    const dayNotes = notesByDay[key] || [];
+    if (dayTasks.length || dayNotes.length) {
+      const dots = document.createElement('span');
+      dots.className = 'cal__dots';
+      dayTasks.slice(0, 4).forEach((t) => {
+        const dot = document.createElement('i');
+        dot.className = 'cal__dot';
+        dot.style.background = getPriority(t.priorityId).color;
+        dots.appendChild(dot);
+      });
+      if (dayNotes.length) {
+        const dot = document.createElement('i');
+        dot.className = 'cal__dot cal__dot--note';
+        dots.appendChild(dot);
+      }
+      cell.appendChild(dots);
+    }
+
+    cell.addEventListener('click', () => {
+      calSelected = calSelected === key ? null : key;
+      renderCalendar();
+    });
+    grid.appendChild(cell);
+  }
+
+  renderCalDayTasks(byDay);
+}
+
+function renderCalDayTasks(byDay) {
+  const box = $('#cal-day-tasks');
+  box.innerHTML = '';
+  if (!calSelected) return;
+
+  const head = document.createElement('div');
+  head.className = 'cal__day-head';
+  const d = new Date(`${calSelected}T00:00`);
+  const label = document.createElement('span');
+  label.textContent = d.toLocaleDateString('pt-BR', {
+    weekday: 'long',
+    day: '2-digit',
+    month: 'long',
+  });
+
+  const addBtn = document.createElement('button');
+  addBtn.className = 'round-btn round-btn--primary cal__add';
+  addBtn.textContent = '+';
+  addBtn.title = 'Nova tarefa neste dia';
+  addBtn.addEventListener('click', () => openFormForDay(calSelected));
+
+  head.append(label, addBtn);
+  box.appendChild(head);
+
+  const tasks = (byDay[calSelected] || [])
+    .slice()
+    .sort((a, b) => new Date(a.deadline) - new Date(b.deadline));
+
+  if (!tasks.length) {
+    const p = document.createElement('p');
+    p.className = 'empty-msg';
+    p.textContent = 'Sem tarefas neste dia.';
+    box.appendChild(p);
+  }
+
+  tasks.forEach((t) => {
+    const wrap = document.createElement('div');
+    wrap.className = 'cal__task-wrap';
+
+    const item = document.createElement('div');
+    item.className = 'cal__task' + (t.done ? ' done' : '');
+    item.style.setProperty('--card-color', getPriority(t.priorityId).color);
+    const time = new Date(t.deadline).toLocaleTimeString('pt-BR', {
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+    item.textContent = `${time}  ${t.name}`;
+    item.addEventListener('click', () => openForm(t.id));
+    wrap.appendChild(item);
+
+    // Notas vinculadas a esta tarefa: pequena extensão sob o card do to-do.
+    state.notes
+      .filter((n) => n.taskId === t.id)
+      .forEach((n) => {
+        const ext = document.createElement('div');
+        ext.className = 'cal__note-ext';
+        ext.textContent = `🗒 ${n.title || '(sem título)'}`;
+        ext.title = n.content || '';
+        ext.addEventListener('click', (e) => {
+          e.stopPropagation();
+          openNoteForm(n.id);
+        });
+        wrap.appendChild(ext);
+      });
+
+    box.appendChild(wrap);
+  });
+
+  // Notas do dia NÃO vinculadas a tarefa: lista de notas do dia.
+  const dayNotes = state.notes.filter((n) => n.day === calSelected && !n.taskId);
+  if (dayNotes.length) {
+    const sub = document.createElement('div');
+    sub.className = 'cal__day-subhead';
+    sub.textContent = 'Notas do dia';
+    box.appendChild(sub);
+
+    dayNotes.forEach((n) => {
+      const item = document.createElement('div');
+      item.className = 'cal__note';
+      item.textContent = `🗒 ${n.title || '(sem título)'}`;
+      item.title = n.content || '';
+      item.addEventListener('click', () => openNoteForm(n.id));
+      box.appendChild(item);
+    });
+  }
+}
+
+function isCalendarOpen() {
+  return !$('#view-calendar').classList.contains('hidden');
+}
+
+// Abre o formulário de nova tarefa com o prazo já no dia selecionado (09:00).
+function openFormForDay(dayKey) {
+  openForm(null);
+  if (dayKey) $('#f-deadline').value = `${dayKey}T09:00`;
+}
+
+// ============================================================
+//  Notas (vinculadas a seção/projeto; opcionalmente a tarefa ou dia)
+// ============================================================
+let editingNoteId = null;
+
+function visibleNotes() {
+  const { activeProfileId, activeProjectId } = state.config;
+  return state.notes
+    .filter((n) => n.profileId === activeProfileId && n.projectId === activeProjectId)
+    .sort((a, b) => b.createdAt - a.createdAt);
+}
+
+function isNotesOpen() {
+  return !$('#view-notes').classList.contains('hidden');
+}
+
+function renderNotes() {
+  const ul = $('#notes-list');
+  ul.innerHTML = '';
+  const notes = visibleNotes();
+  $('#notes-empty').classList.toggle('hidden', notes.length > 0);
+
+  notes.forEach((note) => {
+    const li = document.createElement('li');
+    li.className = 'card note-card';
+    if (expandedIds.has(note.id)) li.classList.add('expanded');
+
+    const top = document.createElement('div');
+    top.className = 'card__top';
+    const title = document.createElement('span');
+    title.className = 'card__title';
+    title.textContent = note.title || '(sem título)';
+    top.appendChild(title);
+    li.appendChild(top);
+
+    if (note.content) {
+      const desc = document.createElement('div');
+      desc.className = 'card__desc';
+      desc.textContent = note.content;
+      li.appendChild(desc);
+    }
+
+    // Vínculos opcionais (tarefa / dia)
+    const meta = document.createElement('div');
+    meta.className = 'card__meta';
+    if (note.taskId) {
+      const task = state.tasks.find((t) => t.id === note.taskId);
+      if (task) {
+        const span = document.createElement('span');
+        span.textContent = `🔗 ${task.name}`;
+        meta.appendChild(span);
+      }
+    }
+    if (note.day) {
+      const span = document.createElement('span');
+      const d = new Date(`${note.day}T00:00`);
+      span.textContent = `📅 ${d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })}`;
+      meta.appendChild(span);
+    }
+    if (meta.childNodes.length) li.appendChild(meta);
+
+    const actions = document.createElement('div');
+    actions.className = 'card__actions';
+    actions.append(
+      makeActionBtn('✎', 'Editar', '', () => openNoteForm(note.id)),
+      makeActionBtn('🗑', 'Excluir', 'icon-btn--danger', () => deleteNote(note.id))
+    );
+    li.appendChild(actions);
+
+    // Clique expande/recolhe a nota (não edita — para editar use o ✎).
+    li.addEventListener('click', () => {
+      if (expandedIds.has(note.id)) expandedIds.delete(note.id);
+      else expandedIds.add(note.id);
+      li.classList.toggle('expanded');
+    });
+    ul.appendChild(li);
+  });
+}
+
+// Preenche o select de tarefas (da seção/projeto ativos) para vincular.
+function fillNoteTaskSelect(selectedId) {
+  const sel = $('#n-task');
+  sel.innerHTML = '';
+  const none = document.createElement('option');
+  none.value = '';
+  none.textContent = '— Nenhuma —';
+  sel.appendChild(none);
+
+  const { activeProfileId, activeProjectId } = state.config;
+  state.tasks
+    .filter((t) => t.profileId === activeProfileId && t.projectId === activeProjectId)
+    .forEach((t) => {
+      const opt = document.createElement('option');
+      opt.value = t.id;
+      opt.textContent = t.name;
+      sel.appendChild(opt);
+    });
+  sel.value = selectedId || '';
+}
+
+function openNoteForm(id = null) {
+  editingNoteId = id;
+  if (id) {
+    const n = state.notes.find((x) => x.id === id);
+    $('#noteform-title').textContent = 'Editar nota';
+    $('#n-title').value = n.title || '';
+    $('#n-content').value = n.content || '';
+    fillNoteTaskSelect(n.taskId);
+    $('#n-day').value = n.day || '';
+    $('#btn-note-delete').classList.remove('hidden');
+  } else {
+    $('#noteform-title').textContent = 'Nova nota';
+    $('#n-title').value = '';
+    $('#n-content').value = '';
+    fillNoteTaskSelect(null);
+    $('#n-day').value = '';
+    $('#btn-note-delete').classList.add('hidden');
+  }
+  showView('noteform');
+  setTimeout(() => $('#n-title').focus(), 50);
+}
+
+async function submitNoteForm(e) {
+  e.preventDefault();
+  const title = $('#n-title').value.trim();
+  if (!title) return;
+
+  const payload = {
+    title,
+    content: $('#n-content').value.trim(),
+    taskId: $('#n-task').value || null,
+    day: $('#n-day').value || null,
+  };
+
+  if (editingNoteId) {
+    Object.assign(state.notes.find((x) => x.id === editingNoteId), payload);
+  } else {
+    state.notes.push({
+      id: `n-${Date.now()}-${Math.floor(Math.random() * 1e4)}`,
+      ...payload,
+      profileId: state.config.activeProfileId,
+      projectId: state.config.activeProjectId,
+      createdAt: Date.now(),
+    });
+  }
+
+  await persist();
+  renderNotes();
+  showView('notes');
+}
+
+async function deleteNote(id) {
+  state.notes = state.notes.filter((n) => n.id !== id);
+  expandedIds.delete(id);
+  await persist();
+  renderNotes();
+}
+
+// ============================================================
 //  Configurações
 // ============================================================
 function renderSettings() {
@@ -577,6 +1003,7 @@ function renderSettings() {
   $('#s-opacity').value = state.config.opacity;
   $('#s-cardmode').value = state.config.cardMode;
   $('#s-stream').checked = state.config.showWhenStreaming;
+  $('#s-recurring').checked = state.config.showRecurring;
   $('#s-sort-field').value = state.config.sort.field;
   $('#s-sort-dir').value = state.config.sort.dir;
   renderPriorityEditor();
@@ -686,16 +1113,61 @@ function movePriority(idx, delta) {
   renderList();
 }
 
-// ---------- Editor de perfis / projetos ----------
+// Botões de reordenação (setas ▲▼).
+function makeOrderBtns(onUp, onDown) {
+  const div = document.createElement('div');
+  div.className = 'order-btns';
+  const up = document.createElement('button');
+  up.textContent = '▲';
+  up.title = 'Subir';
+  up.addEventListener('click', onUp);
+  const down = document.createElement('button');
+  down.textContent = '▼';
+  down.title = 'Descer';
+  down.addEventListener('click', onDown);
+  div.append(up, down);
+  return div;
+}
+
+function refreshAfterStructureChange() {
+  persist();
+  renderSettings();
+  renderTabs();
+  renderList();
+}
+
+// Reordena seções e projetos.
+function moveProfile(idx, delta) {
+  const arr = state.config.profiles;
+  const ni = idx + delta;
+  if (ni < 0 || ni >= arr.length) return;
+  [arr[idx], arr[ni]] = [arr[ni], arr[idx]];
+  refreshAfterStructureChange();
+}
+function moveProject(profile, idx, delta) {
+  const arr = profile.projects;
+  const ni = idx + delta;
+  if (ni < 0 || ni >= arr.length) return;
+  [arr[idx], arr[ni]] = [arr[ni], arr[idx]];
+  refreshAfterStructureChange();
+}
+
+// ---------- Editor de seções / projetos ----------
 function renderProfileEditor() {
   const box = $('#profile-editor');
   box.innerHTML = '';
-  state.config.profiles.forEach((profile) => {
+  state.config.profiles.forEach((profile, pIdx) => {
     const block = document.createElement('div');
     block.className = 'profile-block';
 
     const head = document.createElement('div');
     head.className = 'profile-block__head';
+
+    const pOrder = makeOrderBtns(
+      () => moveProfile(pIdx, -1),
+      () => moveProfile(pIdx, 1)
+    );
+
     const pName = document.createElement('input');
     pName.type = 'text';
     pName.value = profile.name;
@@ -707,7 +1179,7 @@ function renderProfileEditor() {
 
     const delP = document.createElement('button');
     delP.className = 'icon-btn icon-btn--danger';
-    delP.textContent = '✕ perfil';
+    delP.textContent = '✕ seção';
     delP.addEventListener('click', () => {
       if (state.config.profiles.length <= 1) return;
       removeTasksOf(profile.id, null);
@@ -716,17 +1188,20 @@ function renderProfileEditor() {
         state.config.activeProfileId = state.config.profiles[0].id;
         state.config.activeProjectId = state.config.profiles[0].projects[0].id;
       }
-      persist();
-      renderSettings();
-      renderTabs();
-      renderList();
+      refreshAfterStructureChange();
     });
-    head.append(pName, delP);
+    head.append(pOrder, pName, delP);
     block.appendChild(head);
 
-    profile.projects.forEach((proj) => {
+    profile.projects.forEach((proj, jIdx) => {
       const row = document.createElement('div');
       row.className = 'project-row';
+
+      const jOrder = makeOrderBtns(
+        () => moveProject(profile, jIdx, -1),
+        () => moveProject(profile, jIdx, 1)
+      );
+
       const jName = document.createElement('input');
       jName.type = 'text';
       jName.value = proj.name;
@@ -746,12 +1221,9 @@ function renderProfileEditor() {
         if (state.config.activeProjectId === proj.id) {
           state.config.activeProjectId = profile.projects[0].id;
         }
-        persist();
-        renderSettings();
-        renderTabs();
-        renderList();
+        refreshAfterStructureChange();
       });
-      row.append(jName, delJ);
+      row.append(jOrder, jName, delJ);
       block.appendChild(row);
     });
 
@@ -773,7 +1245,7 @@ function renderProfileEditor() {
   });
 }
 
-// Remove tarefas de um perfil (projId null) ou de um projeto específico.
+// Remove tarefas de uma seção (projId null) ou de um projeto específico.
 function removeTasksOf(profileId, projectId) {
   state.tasks = state.tasks.filter((t) => {
     const match =
@@ -938,6 +1410,18 @@ function bindEvents() {
     renderDraftAttachments();
   });
 
+  // Date picker fácil: clicar/focar o campo abre o calendário nativo.
+  const deadline = $('#f-deadline');
+  const openPicker = () => {
+    try {
+      deadline.showPicker();
+    } catch (e) {
+      /* navegador sem showPicker: cai no comportamento padrão */
+    }
+  };
+  deadline.addEventListener('focus', openPicker);
+  deadline.addEventListener('click', openPicker);
+
   $('#btn-cardmode').addEventListener('click', () => {
     state.config.cardMode = state.config.cardMode === 'compact' ? 'detailed' : 'compact';
     applyAppearance();
@@ -946,6 +1430,52 @@ function bindEvents() {
 
   $('#btn-passive').addEventListener('click', () => setDisplayMode('passive'));
   $('#passive-exit').addEventListener('click', () => setDisplayMode('normal'));
+
+  // Calendário: o botão alterna entre lista e calendário.
+  $('#btn-calendar').addEventListener('click', () => {
+    if (isCalendarOpen()) {
+      showView('list');
+    } else {
+      renderCalendar();
+      showView('calendar');
+    }
+  });
+  $('#cal-prev').addEventListener('click', () => {
+    calMonth -= 1;
+    if (calMonth < 0) {
+      calMonth = 11;
+      calYear -= 1;
+    }
+    renderCalendar();
+  });
+  $('#cal-next').addEventListener('click', () => {
+    calMonth += 1;
+    if (calMonth > 11) {
+      calMonth = 0;
+      calYear += 1;
+    }
+    renderCalendar();
+  });
+
+  // Notas: o botão alterna entre lista de tarefas e lista de notas.
+  $('#btn-notes').addEventListener('click', () => {
+    if (isNotesOpen()) {
+      showView('list');
+    } else {
+      renderNotes();
+      showView('notes');
+    }
+  });
+  $('#btn-add-note').addEventListener('click', () => openNoteForm(null));
+  $('#note-form').addEventListener('submit', submitNoteForm);
+  $('#btn-note-cancel').addEventListener('click', () => {
+    renderNotes();
+    showView('notes');
+  });
+  $('#btn-note-delete').addEventListener('click', () => {
+    if (editingNoteId) deleteNote(editingNoteId);
+    showView('notes');
+  });
 
   $('#btn-settings').addEventListener('click', () => {
     renderSettings();
@@ -986,6 +1516,12 @@ function bindEvents() {
     persist();
   });
 
+  $('#s-recurring').addEventListener('change', (e) => {
+    state.config.showRecurring = e.target.checked;
+    persist();
+    renderList();
+  });
+
   $('#s-sort-field').addEventListener('change', (e) => {
     state.config.sort.field = e.target.value;
     persist();
@@ -1014,7 +1550,7 @@ function bindEvents() {
   $('#btn-add-profile').addEventListener('click', () => {
     state.config.profiles.push({
       id: `pf-${Date.now()}`,
-      name: `Perfil ${state.config.profiles.length + 1}`,
+      name: `Seção ${state.config.profiles.length + 1}`,
       projects: [{ id: `pj-${Date.now()}`, name: 'Geral' }],
     });
     persist();

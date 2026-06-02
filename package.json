@@ -6,7 +6,7 @@
   "scripts": {
     "start": "electron .",
     "dev": "electron . --dev",
-    "build": "electron-builder --dir",
+    "build": "electron-builder",
     "setup": "powershell -NoProfile -ExecutionPolicy Bypass -File build.ps1"
   },
   "author": "",

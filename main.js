@@ -51,10 +51,13 @@ const DEFAULT_DATA = {
     showWhenStreaming: true,
     // Perfil de cores (paleta) — ver THEMES no renderer
     theme: 'midnight',
+    // Mostrar (ou não) tarefas recorrentes na lista
+    showRecurring: true,
     // Posição manual do painel { left, top } ou null (canto sup. direito)
     position: null,
   },
   tasks: [],
+  notes: [],
 };
 
 // Garante integridade dos dados (perfis, projetos, campos novos, órfãos).
@@ -88,17 +91,22 @@ function normalize(data) {
   if (c.height === undefined) c.height = null;
   if (c.showWhenStreaming === undefined) c.showWhenStreaming = true;
   if (!c.theme) c.theme = 'midnight';
+  if (c.showRecurring === undefined) c.showRecurring = true;
 
-  // Tarefas órfãs vão para o primeiro perfil/projeto válido.
-  data.tasks.forEach((t) => {
-    const tp = c.profiles.find((p) => p.id === t.profileId);
+  // Garante vínculo válido de seção/projeto (tarefas e notas órfãs).
+  const fixOwnership = (item) => {
+    const tp = c.profiles.find((p) => p.id === item.profileId);
     if (!tp) {
-      t.profileId = firstProfile.id;
-      t.projectId = firstProfile.projects[0].id;
-    } else if (!t.projectId || !tp.projects.find((pj) => pj.id === t.projectId)) {
-      t.projectId = tp.projects[0].id;
+      item.profileId = firstProfile.id;
+      item.projectId = firstProfile.projects[0].id;
+    } else if (!item.projectId || !tp.projects.find((pj) => pj.id === item.projectId)) {
+      item.projectId = tp.projects[0].id;
     }
-  });
+  };
+  data.tasks.forEach(fixOwnership);
+
+  if (!Array.isArray(data.notes)) data.notes = [];
+  data.notes.forEach(fixOwnership);
 
   return data;
 }
@@ -118,6 +126,7 @@ function loadData() {
       return normalize({
         config: { ...DEFAULT_DATA.config, ...(parsed.config || {}) },
         tasks: Array.isArray(parsed.tasks) ? parsed.tasks : [],
+        notes: Array.isArray(parsed.notes) ? parsed.notes : [],
       });
     }
   } catch (err) {

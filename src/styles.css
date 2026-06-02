@@ -73,7 +73,7 @@ body {
 .panel__actions {
   display: flex;
   gap: 6px;
-  margin-left: auto;
+  justify-content: flex-end;
 }
 
 /* ---------- Abas de perfil / projeto ---------- */
@@ -100,7 +100,7 @@ body {
   background: rgba(var(--accent-rgb), 0.85);
 }
 .tabs--project {
-  flex: 1;
+  flex: 0 0 auto;
   min-width: 0;
 }
 /* Abas não encolhem: mantêm o tamanho e a lista rola horizontalmente */
@@ -270,6 +270,193 @@ body.mode-passive .resizer {
   font-size: 13px;
   text-align: center;
   padding: 24px 8px;
+}
+
+/* ---------- Notas ---------- */
+.notes-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.notes-title {
+  font-size: 14px;
+  font-weight: 600;
+}
+.note-card .card__desc {
+  margin-top: 0;
+  -webkit-line-clamp: 4;
+}
+
+/* ---------- Calendário ---------- */
+.cal {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.cal__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.cal__title {
+  font-size: 14px;
+  font-weight: 600;
+  flex: 1;
+  text-align: center;
+}
+.cal__weekdays,
+.cal__grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+}
+.cal__weekdays span {
+  text-align: center;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+.cal__cell {
+  position: relative;
+  aspect-ratio: 1 / 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 3px;
+  padding: 4px 2px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: var(--text);
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.cal__cell:hover {
+  background: rgba(255, 255, 255, 0.13);
+}
+.cal__cell.other-month {
+  opacity: 0.38;
+}
+.cal__cell.today {
+  border-color: var(--accent);
+}
+.cal__cell.selected {
+  background: rgba(var(--accent-rgb), 0.28);
+  border-color: var(--accent);
+}
+.cal__num {
+  font-size: 12px;
+  line-height: 1;
+}
+.cal__dots {
+  display: flex;
+  gap: 2px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.cal__dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  display: inline-block;
+}
+.cal__day-tasks {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 2px;
+}
+.cal__day-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-dim);
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  padding-top: 8px;
+}
+.cal__day-head > span {
+  text-transform: capitalize;
+}
+.cal__add {
+  width: 24px;
+  height: 24px;
+  font-size: 16px;
+  flex: 0 0 auto;
+}
+.cal__task {
+  border-left: 4px solid var(--card-color, var(--accent));
+  background: rgba(255, 255, 255, 0.07);
+  border-radius: 8px;
+  padding: 7px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.cal__task:hover {
+  background: rgba(255, 255, 255, 0.13);
+}
+.cal__task.done {
+  text-decoration: line-through;
+  color: var(--text-dim);
+}
+.cal__dot--note {
+  background: var(--text-dim);
+  opacity: 0.7;
+}
+.cal__task-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+/* Nota vinculada a uma tarefa: extensão sob o card do to-do */
+.cal__note-ext {
+  margin-left: 14px;
+  background: rgba(255, 255, 255, 0.05);
+  border-left: 2px dashed rgba(var(--accent-rgb), 0.6);
+  border-radius: 0 6px 6px 0;
+  padding: 5px 9px;
+  font-size: 11px;
+  color: var(--text-dim);
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cal__note-ext:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text);
+}
+.cal__day-subhead {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  margin-top: 6px;
+}
+/* Nota do dia (não vinculada a tarefa) */
+.cal__note {
+  border-left: 4px solid var(--text-dim);
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 8px;
+  padding: 7px 10px;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cal__note:hover {
+  background: rgba(255, 255, 255, 0.12);
 }
 
 /* ---------- Card de tarefa ---------- */
@@ -459,6 +646,47 @@ body.mode-passive .passive-exit {
   font-size: 15px;
   font-weight: 600;
 }
+
+/* ---------- Seções colapsáveis das configurações ---------- */
+.settings-group {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.04);
+  overflow: hidden;
+}
+.settings-group > summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 10px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  user-select: none;
+}
+.settings-group > summary::-webkit-details-marker {
+  display: none;
+}
+/* Seta que gira ao abrir */
+.settings-group > summary::before {
+  content: "▸";
+  color: var(--accent);
+  font-size: 11px;
+  transition: transform 0.15s;
+}
+.settings-group[open] > summary::before {
+  transform: rotate(90deg);
+}
+.settings-group > summary:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+.settings-group__body {
+  padding: 4px 12px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
 .field {
   display: flex;
   flex-direction: column;
@@ -630,11 +858,12 @@ textarea {
   padding: 0;
   cursor: pointer;
 }
-.prio-item .order-btns {
+.order-btns {
   display: flex;
   flex-direction: column;
+  flex: 0 0 auto;
 }
-.prio-item .order-btns button {
+.order-btns button {
   background: none;
   border: none;
   color: var(--text-dim);
@@ -643,7 +872,7 @@ textarea {
   line-height: 1;
   padding: 1px;
 }
-.prio-item .order-btns button:hover {
+.order-btns button:hover {
   color: var(--text);
 }
 

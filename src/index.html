@@ -12,23 +12,23 @@
     <div id="panel" class="panel interactive">
       <!-- Coluna principal (conteúdo) -->
       <div class="panel__main">
-        <!-- Cabeçalho: abas de perfil + ações (sem título) -->
+        <!-- Cabeçalho: abas de seção + abas de projeto + ações (sem título) -->
         <header class="panel__header">
-          <!-- Abas de PERFIL (ex.: Trabalho, Financeiro) -->
+          <!-- Abas de SEÇÃO (ex.: Trabalho, Financeiro) -->
           <nav id="tabs-profile" class="tabs tabs--profile"></nav>
 
-          <div class="panel__row">
-            <!-- Sub-abas de PROJETO do perfil ativo -->
-            <nav id="tabs-project" class="tabs tabs--project"></nav>
+          <!-- Sub-abas de PROJETO do seção ativa (acima da barra de botões) -->
+          <nav id="tabs-project" class="tabs tabs--project"></nav>
 
-            <!-- Botões redondos de ação -->
-            <div class="panel__actions">
-              <button id="btn-add" class="round-btn round-btn--primary" title="Nova tarefa">+</button>
-              <button id="btn-cardmode" class="round-btn" title="Alternar modo do card (compacto/detalhado)">▤</button>
-              <button id="btn-passive" class="round-btn" title="Modo passivo (cards sem botões) — Ctrl+Alt+M para voltar">👁</button>
-              <button id="btn-settings" class="round-btn" title="Configurações">⚙</button>
-              <button id="btn-collapse" class="round-btn" title="Recolher">▾</button>
-            </div>
+          <!-- Barra de botões redondos de ação -->
+          <div class="panel__actions">
+            <button id="btn-add" class="round-btn round-btn--primary" title="Nova tarefa">+</button>
+            <button id="btn-calendar" class="round-btn" title="Calendário">📅</button>
+            <button id="btn-notes" class="round-btn" title="Notas">🗒</button>
+            <button id="btn-cardmode" class="round-btn" title="Alternar modo do card (compacto/detalhado)">▤</button>
+            <button id="btn-passive" class="round-btn" title="Modo passivo (cards sem botões) — Ctrl+Alt+M para voltar">👁</button>
+            <button id="btn-settings" class="round-btn" title="Configurações">⚙</button>
+            <button id="btn-collapse" class="round-btn" title="Recolher">▾</button>
           </div>
         </header>
 
@@ -36,6 +36,66 @@
         <section id="view-list" class="view">
           <ul id="task-list" class="task-list"></ul>
           <p id="empty-msg" class="empty-msg">Nenhuma tarefa aqui. Clique em + para adicionar.</p>
+        </section>
+
+        <!-- NOTAS (lista) -->
+        <section id="view-notes" class="view hidden">
+          <div class="notes-head">
+            <span class="notes-title">Notas</span>
+            <button id="btn-add-note" class="round-btn round-btn--primary cal__add" title="Nova nota">+</button>
+          </div>
+          <ul id="notes-list" class="task-list"></ul>
+          <p id="notes-empty" class="empty-msg">Nenhuma nota aqui. Clique em + para adicionar.</p>
+        </section>
+
+        <!-- NOTA (cadastro/edição) -->
+        <section id="view-noteform" class="view hidden">
+          <form id="note-form" class="form">
+            <h2 id="noteform-title" class="form__heading">Nova nota</h2>
+
+            <label class="field">
+              <span>Título</span>
+              <input type="text" id="n-title" required maxlength="120" placeholder="Ex.: Ideias da reunião" />
+            </label>
+
+            <label class="field">
+              <span>Conteúdo</span>
+              <textarea id="n-content" rows="4" placeholder="Escreva sua nota..."></textarea>
+            </label>
+
+            <label class="field">
+              <span>Vincular a uma tarefa (opcional)</span>
+              <select id="n-task"></select>
+            </label>
+
+            <label class="field">
+              <span>Vincular a um dia (opcional)</span>
+              <input type="date" id="n-day" />
+            </label>
+
+            <div class="form__buttons">
+              <button type="button" id="btn-note-delete" class="btn btn--danger hidden">Excluir</button>
+              <button type="button" id="btn-note-cancel" class="btn btn--ghost">Cancelar</button>
+              <button type="submit" class="btn btn--primary">Salvar</button>
+            </div>
+          </form>
+        </section>
+
+        <!-- CALENDÁRIO -->
+        <section id="view-calendar" class="view hidden">
+          <div class="cal">
+            <div class="cal__head">
+              <button id="cal-prev" class="round-btn" title="Mês anterior">‹</button>
+              <span id="cal-title" class="cal__title"></span>
+              <button id="cal-next" class="round-btn" title="Próximo mês">›</button>
+            </div>
+            <div class="cal__weekdays">
+              <span>Dom</span><span>Seg</span><span>Ter</span><span>Qua</span>
+              <span>Qui</span><span>Sex</span><span>Sáb</span>
+            </div>
+            <div id="cal-grid" class="cal__grid"></div>
+            <div id="cal-day-tasks" class="cal__day-tasks"></div>
+          </div>
         </section>
 
         <!-- FORMULÁRIO (cadastro/edição) -->
@@ -63,6 +123,17 @@
               <input type="datetime-local" id="f-deadline" />
             </label>
 
+            <label class="field">
+              <span>Recorrência</span>
+              <select id="f-recurrence">
+                <option value="none">Não recorrente</option>
+                <option value="hourly">Por hora</option>
+                <option value="daily">Diária</option>
+                <option value="monthly">Mensal</option>
+                <option value="yearly">Anual</option>
+              </select>
+            </label>
+
             <div class="field">
               <span>Anexos</span>
               <button type="button" id="btn-attach" class="btn btn--ghost">+ Adicionar anexos</button>
@@ -81,63 +152,92 @@
           <div class="settings">
             <h2 class="form__heading">Configurações</h2>
 
-            <div class="field">
-              <span>Perfil de cores</span>
-              <select id="s-theme"></select>
-              <div id="theme-swatches" class="theme-swatches"></div>
-            </div>
+            <details class="settings-group" open>
+              <summary>Aparência</summary>
+              <div class="settings-group__body">
+                <div class="field">
+                  <span>Paleta de cores</span>
+                  <select id="s-theme"></select>
+                  <div id="theme-swatches" class="theme-swatches"></div>
+                </div>
 
-            <div class="field">
-              <span>Transparência do painel</span>
-              <input type="range" id="s-opacity" min="0.2" max="1" step="0.05" />
-            </div>
+                <div class="field">
+                  <span>Transparência do painel</span>
+                  <input type="range" id="s-opacity" min="0.2" max="1" step="0.05" />
+                </div>
 
-            <div class="field">
-              <span>Tamanho e posição</span>
-              <small class="hint">Arraste as bordas/cantos do painel para redimensionar e a alça ⠿ para mover.</small>
-              <button type="button" id="btn-reset-size" class="btn btn--ghost">Restaurar tamanho e posição</button>
-            </div>
-
-            <div class="field">
-              <span>Modo do card</span>
-              <select id="s-cardmode">
-                <option value="detailed">Detalhado</option>
-                <option value="compact">Compacto</option>
-              </select>
-            </div>
-
-            <label class="check-field">
-              <input type="checkbox" id="s-stream" />
-              <span>Aparecer ao compartilhar/streamar a tela</span>
-            </label>
-
-            <div class="field">
-              <span>Ordenar por</span>
-              <div class="row">
-                <select id="s-sort-field">
-                  <option value="priority">Prioridade</option>
-                  <option value="deadline">Prazo</option>
-                  <option value="name">Nome</option>
-                  <option value="created">Criação</option>
-                </select>
-                <select id="s-sort-dir">
-                  <option value="asc">Crescente</option>
-                  <option value="desc">Decrescente</option>
-                </select>
+                <div class="field">
+                  <span>Modo do card</span>
+                  <select id="s-cardmode">
+                    <option value="detailed">Detalhado</option>
+                    <option value="compact">Compacto</option>
+                  </select>
+                </div>
               </div>
-            </div>
+            </details>
 
-            <div class="field">
-              <span>Prioridades (nome, cor e ordem)</span>
-              <ul id="prio-list" class="prio-list"></ul>
-              <button type="button" id="btn-add-prio" class="btn btn--ghost">+ Nova prioridade</button>
-            </div>
+            <details class="settings-group">
+              <summary>Tamanho e posição</summary>
+              <div class="settings-group__body">
+                <div class="field">
+                  <small class="hint">Arraste as bordas/cantos do painel para redimensionar e a alça ⠿ para mover.</small>
+                  <button type="button" id="btn-reset-size" class="btn btn--ghost">Restaurar tamanho e posição</button>
+                </div>
+              </div>
+            </details>
 
-            <div class="field">
-              <span>Perfis e projetos (abas)</span>
-              <div id="profile-editor" class="profile-editor"></div>
-              <button type="button" id="btn-add-profile" class="btn btn--ghost">+ Novo perfil</button>
-            </div>
+            <details class="settings-group">
+              <summary>Exibição</summary>
+              <div class="settings-group__body">
+                <label class="check-field">
+                  <input type="checkbox" id="s-stream" />
+                  <span>Aparecer ao compartilhar/streamar a tela</span>
+                </label>
+
+                <label class="check-field">
+                  <input type="checkbox" id="s-recurring" />
+                  <span>Mostrar tarefas recorrentes</span>
+                </label>
+
+                <div class="field">
+                  <span>Ordenar por</span>
+                  <div class="row">
+                    <select id="s-sort-field">
+                      <option value="priority">Prioridade</option>
+                      <option value="deadline">Prazo</option>
+                      <option value="name">Nome</option>
+                      <option value="created">Criação</option>
+                    </select>
+                    <select id="s-sort-dir">
+                      <option value="asc">Crescente</option>
+                      <option value="desc">Decrescente</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+            </details>
+
+            <details class="settings-group">
+              <summary>Prioridades</summary>
+              <div class="settings-group__body">
+                <div class="field">
+                  <small class="hint">Nome, cor e ordem.</small>
+                  <ul id="prio-list" class="prio-list"></ul>
+                  <button type="button" id="btn-add-prio" class="btn btn--ghost">+ Nova prioridade</button>
+                </div>
+              </div>
+            </details>
+
+            <details class="settings-group">
+              <summary>Seções e projetos</summary>
+              <div class="settings-group__body">
+                <div class="field">
+                  <small class="hint">Abas do topo. Use ▲▼ para reordenar.</small>
+                  <div id="profile-editor" class="profile-editor"></div>
+                  <button type="button" id="btn-add-profile" class="btn btn--ghost">+ Nova seção</button>
+                </div>
+              </div>
+            </details>
 
             <div class="form__buttons">
               <button type="button" id="btn-quit" class="btn btn--danger">Sair do app</button>
