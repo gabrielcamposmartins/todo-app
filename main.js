@@ -336,6 +336,14 @@ app.whenReady().then(() => {
   ensureDirs();
   createWindow();
 
+  // Verificação automática de atualização ao iniciar (só na versão instalada).
+  // Pequeno atraso para o renderer registrar os listeners de status.
+  if (app.isPackaged) {
+    setTimeout(() => {
+      autoUpdater.checkForUpdates().catch(() => {});
+    }, 4000);
+  }
+
   // Atalho global para mostrar/esconder o overlay.
   globalShortcut.register('CommandOrControl+Alt+T', () => {
     if (!mainWindow) return;

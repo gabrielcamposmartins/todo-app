@@ -1972,10 +1972,12 @@ function bindUpdate() {
         break;
       case 'none':
         status.textContent = `Você está na versão mais recente${p.version ? ` (v${p.version})` : ''}.`;
+        $('#btn-settings').classList.remove('has-update');
         break;
       case 'available':
         status.textContent = `Nova versão v${p.version} disponível.`;
         dlBtn.classList.remove('hidden');
+        $('#btn-settings').classList.add('has-update');
         break;
       case 'downloading':
         status.textContent = `Baixando... ${p.percent || 0}%`;
@@ -1984,6 +1986,7 @@ function bindUpdate() {
         status.textContent = `Versão v${p.version} baixada. Pronta para instalar.`;
         dlBtn.classList.add('hidden');
         instBtn.classList.remove('hidden');
+        $('#btn-settings').classList.add('has-update');
         break;
       case 'error':
         status.textContent = `Erro: ${p.message || ''}`;

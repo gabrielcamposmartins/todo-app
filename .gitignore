@@ -4,6 +4,10 @@ node_modules/
 # Saída de build
 dist/
 
+# Segredos / variáveis de ambiente
+.env
+.env.*
+
 # Logs
 *.log
 npm-debug.log*

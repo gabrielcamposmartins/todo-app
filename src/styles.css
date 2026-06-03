@@ -161,6 +161,21 @@ body {
   background: var(--accent);
   border-color: var(--accent);
 }
+/* Indicador de atualização disponível no botão de configurações */
+.round-btn.has-update::after {
+  content: "";
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #ff3b30;
+  border: 2px solid rgba(var(--bg), 1);
+}
+.round-btn {
+  position: relative;
+}
 .round-btn--primary {
   background: var(--accent);
   border-color: var(--accent);
