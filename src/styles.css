@@ -774,6 +774,142 @@ textarea {
   accent-color: var(--accent);
   cursor: pointer;
 }
+.check-field--sm {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+/* ---------- Notas vinculadas dentro do card de to-do ---------- */
+.card__notes {
+  display: none;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 8px;
+}
+.card.expanded .card__notes {
+  display: flex;
+}
+.card__note {
+  background: rgba(255, 255, 255, 0.06);
+  border-left: 3px solid var(--text-dim);
+  border-radius: 6px;
+  padding: 5px 8px;
+  font-size: 11px;
+  color: var(--text-dim);
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.card__note:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--text);
+}
+
+/* ---------- Date/time picker customizado ---------- */
+.picker-trigger {
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 8px;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 13px;
+  padding: 8px 10px;
+  text-align: left;
+  cursor: pointer;
+  width: 100%;
+}
+.picker-trigger:hover {
+  border-color: var(--accent);
+}
+.picker-trigger--empty {
+  color: var(--text-dim);
+}
+.picker {
+  margin-top: 6px;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 10px;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.picker__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.picker__head .round-btn {
+  width: 26px;
+  height: 26px;
+  font-size: 14px;
+}
+.picker__title {
+  flex: 1;
+  text-align: center;
+  font-size: 13px;
+  font-weight: 600;
+}
+.picker__weekdays,
+.picker__grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 3px;
+}
+.picker__weekdays span {
+  text-align: center;
+  font-size: 9px;
+  font-weight: 600;
+  color: var(--text-dim);
+  text-transform: uppercase;
+}
+.picker__cell {
+  aspect-ratio: 1 / 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text);
+  font-family: inherit;
+  cursor: pointer;
+}
+.picker__cell:hover {
+  background: rgba(255, 255, 255, 0.13);
+}
+.picker__cell.other-month {
+  opacity: 0.38;
+}
+.picker__cell.today {
+  border-color: var(--accent);
+}
+.picker__cell.selected {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  font-weight: 600;
+}
+.picker__time {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.picker__time select {
+  width: auto;
+  flex: 0 0 auto;
+  padding: 5px 8px;
+}
+.picker__foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
 
 .form__buttons {
   display: flex;

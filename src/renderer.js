@@ -198,7 +198,8 @@ function updateBubbleBadge() {
   const pending = state.tasks.filter((t) => !t.done).length;
   const badge = $('#bubble-badge');
   badge.textContent = pending > 99 ? '99+' : String(pending);
-  badge.classList.toggle('hidden', pending === 0);
+  // Esconde se zerado ou se o contador estiver desativado nas configurações.
+  badge.classList.toggle('hidden', pending === 0 || !state.config.showBubbleBadge);
 }
 
 // ============================================================
@@ -293,23 +294,53 @@ function renderTabs() {
     navP.appendChild(b);
   });
 
-  // Projetos do perfil ativo
+  // Projetos da seção ativa (+ aba agregada "Tudo" se habilitada)
   const navJ = $('#tabs-project');
   navJ.innerHTML = '';
+
+  const selectProject = (id) => {
+    state.config.activeProjectId = id;
+    persist();
+    renderTabs();
+    renderList();
+    if (isCalendarOpen()) renderCalendar();
+    if (isNotesOpen()) renderNotes();
+  };
+
+  if (activeProfile().mergeProjects) {
+    const b = document.createElement('button');
+    b.className = 'tab' + (state.config.activeProjectId === ALL_PROJECTS ? ' active' : '');
+    b.textContent = 'Tudo';
+    b.addEventListener('click', () => selectProject(ALL_PROJECTS));
+    navJ.appendChild(b);
+  }
+
   activeProfile().projects.forEach((pj) => {
     const b = document.createElement('button');
     b.className = 'tab' + (pj.id === state.config.activeProjectId ? ' active' : '');
     b.textContent = pj.name;
-    b.addEventListener('click', () => {
-      state.config.activeProjectId = pj.id;
-      persist();
-      renderTabs();
-      renderList();
-      if (isCalendarOpen()) renderCalendar();
-      if (isNotesOpen()) renderNotes();
-    });
+    b.addEventListener('click', () => selectProject(pj.id));
     navJ.appendChild(b);
   });
+}
+
+// Id da aba agregada que mostra os to-dos de todos os projetos da seção.
+const ALL_PROJECTS = '__all__';
+
+// Verdadeiro quando a aba ativa é a agregada "Tudo".
+function isAllProjects() {
+  return state.config.activeProjectId === ALL_PROJECTS;
+}
+
+// Projeto efetivo para criar itens quando na aba "Tudo" (1º projeto da seção).
+function effectiveProjectId() {
+  return isAllProjects() ? activeProfile().projects[0].id : state.config.activeProjectId;
+}
+
+// Filtro de pertencimento de um item à aba atual (seção + projeto ou "Tudo").
+function inActiveTab(item) {
+  if (item.profileId !== state.config.activeProfileId) return false;
+  return isAllProjects() || item.projectId === state.config.activeProjectId;
 }
 
 // ============================================================
@@ -341,8 +372,7 @@ function isRecurring(t) {
 }
 
 function visibleTasks() {
-  const { activeProfileId, activeProjectId, sort, showRecurring, displayMode } =
-    state.config;
+  const { sort, showRecurring, displayMode } = state.config;
   const mult = sort.dir === 'desc' ? -1 : 1;
   const prioWeight = (id) => {
     const p = getPriority(id);
@@ -350,7 +380,7 @@ function visibleTasks() {
   };
 
   return state.tasks
-    .filter((t) => t.profileId === activeProfileId && t.projectId === activeProjectId)
+    .filter(inActiveTab)
     .filter((t) => showRecurring || !isRecurring(t)) // ocultar recorrentes (opção)
     .filter((t) => displayMode !== 'passive' || !t.done) // sem concluídas no passivo
     .sort((a, b) => {
@@ -499,7 +529,31 @@ function renderList() {
       span.textContent = `🔁 ${RECUR_LABELS[task.recurrence] || ''}`;
       meta.appendChild(span);
     }
+    const linkedNotes = state.notes.filter((n) => n.taskId === task.id);
+    if (linkedNotes.length) {
+      const span = document.createElement('span');
+      span.textContent = `🗒 ${linkedNotes.length}`;
+      meta.appendChild(span);
+    }
     if (meta.childNodes.length) li.appendChild(meta);
+
+    // Notas vinculadas (lista visível quando o card está expandido)
+    if (linkedNotes.length) {
+      const notesBox = document.createElement('div');
+      notesBox.className = 'card__notes';
+      linkedNotes.forEach((n) => {
+        const row = document.createElement('div');
+        row.className = 'card__note';
+        row.textContent = `🗒 ${n.title || '(sem título)'}`;
+        row.title = n.content || '';
+        row.addEventListener('click', (e) => {
+          e.stopPropagation();
+          openNoteForm(n.id);
+        });
+        notesBox.appendChild(row);
+      });
+      li.appendChild(notesBox);
+    }
 
     // Ações (escondidas no modo passivo via CSS)
     const actions = document.createElement('div');
@@ -582,6 +636,10 @@ function openForm(id = null) {
     draftAttachments = [];
   }
 
+  if (deadlinePicker) {
+    deadlinePicker.refreshTrigger();
+    deadlinePicker.close();
+  }
   renderDraftAttachments();
   showView('form');
   setTimeout(() => $('#f-name').focus(), 50);
@@ -621,7 +679,7 @@ async function submitForm(e) {
       id: `t-${Date.now()}-${Math.floor(Math.random() * 1e4)}`,
       ...payload,
       profileId: state.config.activeProfileId,
-      projectId: state.config.activeProjectId,
+      projectId: effectiveProjectId(),
       done: false,
       createdAt: Date.now(),
     });
@@ -657,14 +715,45 @@ function ymd(d) {
 
 // Tarefas da seção/projeto ativos que possuem prazo (respeitando recorrentes).
 function calendarTasks() {
-  const { activeProfileId, activeProjectId, showRecurring } = state.config;
+  const { showRecurring } = state.config;
   return state.tasks.filter(
-    (t) =>
-      t.profileId === activeProfileId &&
-      t.projectId === activeProjectId &&
-      t.deadline &&
-      (showRecurring || !isRecurring(t))
+    (t) => inActiveTab(t) && t.deadline && (showRecurring || !isRecurring(t))
   );
+}
+
+// Dias (chaves YYYY-MM-DD) em que uma tarefa recorrente ocorre dentro de
+// [startDate, endDate), a partir do prazo base. Granularidade de dia.
+function occurrenceKeysInRange(task, startDate, endDate) {
+  const base = new Date(task.deadline);
+  const rec = task.recurrence;
+  const keys = [];
+  let guard = 0;
+
+  if (rec === 'hourly' || rec === 'daily') {
+    const baseDay = new Date(base.getFullYear(), base.getMonth(), base.getDate());
+    let cur = baseDay < startDate ? new Date(startDate) : baseDay;
+    cur = new Date(cur.getFullYear(), cur.getMonth(), cur.getDate());
+    while (cur < endDate && guard < 500) {
+      keys.push(ymd(cur));
+      cur.setDate(cur.getDate() + 1);
+      guard++;
+    }
+  } else if (rec === 'monthly') {
+    let cur = new Date(base.getFullYear(), base.getMonth(), base.getDate());
+    while (cur < endDate && guard < 1200) {
+      if (cur >= startDate) keys.push(ymd(cur));
+      cur = new Date(cur.getFullYear(), cur.getMonth() + 1, base.getDate());
+      guard++;
+    }
+  } else if (rec === 'yearly') {
+    let cur = new Date(base.getFullYear(), base.getMonth(), base.getDate());
+    while (cur < endDate && guard < 300) {
+      if (cur >= startDate) keys.push(ymd(cur));
+      cur = new Date(cur.getFullYear() + 1, base.getMonth(), base.getDate());
+      guard++;
+    }
+  }
+  return keys;
 }
 
 function renderCalendar() {
@@ -678,11 +767,22 @@ function renderCalendar() {
   const title = first.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
   $('#cal-title').textContent = title.charAt(0).toUpperCase() + title.slice(1);
 
-  // Agrupa tarefas por dia.
+  // Janela visível (6 semanas a partir do domingo anterior ao dia 1).
+  const startDow = first.getDay(); // 0 = domingo
+  const start = new Date(calYear, calMonth, 1 - startDow);
+  const end = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 42);
+
+  // Agrupa tarefas por dia. Recorrentes aparecem em TODOS os dias de ocorrência.
   const byDay = {};
   calendarTasks().forEach((t) => {
-    const key = ymd(new Date(t.deadline));
-    (byDay[key] = byDay[key] || []).push(t);
+    if (isRecurring(t)) {
+      occurrenceKeysInRange(t, start, end).forEach((key) => {
+        (byDay[key] = byDay[key] || []).push(t);
+      });
+    } else {
+      const key = ymd(new Date(t.deadline));
+      (byDay[key] = byDay[key] || []).push(t);
+    }
   });
 
   // Notas atribuídas a um dia e NÃO vinculadas a tarefa (para o indicador).
@@ -693,8 +793,6 @@ function renderCalendar() {
 
   const grid = $('#cal-grid');
   grid.innerHTML = '';
-  const startDow = first.getDay(); // 0 = domingo
-  const start = new Date(calYear, calMonth, 1 - startDow);
   const todayKey = ymd(new Date());
 
   for (let i = 0; i < 42; i++) {
@@ -834,7 +932,10 @@ function isCalendarOpen() {
 // Abre o formulário de nova tarefa com o prazo já no dia selecionado (09:00).
 function openFormForDay(dayKey) {
   openForm(null);
-  if (dayKey) $('#f-deadline').value = `${dayKey}T09:00`;
+  if (dayKey) {
+    $('#f-deadline').value = `${dayKey}T09:00`;
+    if (deadlinePicker) deadlinePicker.refreshTrigger();
+  }
 }
 
 // ============================================================
@@ -843,10 +944,7 @@ function openFormForDay(dayKey) {
 let editingNoteId = null;
 
 function visibleNotes() {
-  const { activeProfileId, activeProjectId } = state.config;
-  return state.notes
-    .filter((n) => n.profileId === activeProfileId && n.projectId === activeProjectId)
-    .sort((a, b) => b.createdAt - a.createdAt);
+  return state.notes.filter(inActiveTab).sort((a, b) => b.createdAt - a.createdAt);
 }
 
 function isNotesOpen() {
@@ -925,15 +1023,12 @@ function fillNoteTaskSelect(selectedId) {
   none.textContent = '— Nenhuma —';
   sel.appendChild(none);
 
-  const { activeProfileId, activeProjectId } = state.config;
-  state.tasks
-    .filter((t) => t.profileId === activeProfileId && t.projectId === activeProjectId)
-    .forEach((t) => {
-      const opt = document.createElement('option');
-      opt.value = t.id;
-      opt.textContent = t.name;
-      sel.appendChild(opt);
-    });
+  state.tasks.filter(inActiveTab).forEach((t) => {
+    const opt = document.createElement('option');
+    opt.value = t.id;
+    opt.textContent = t.name;
+    sel.appendChild(opt);
+  });
   sel.value = selectedId || '';
 }
 
@@ -954,6 +1049,10 @@ function openNoteForm(id = null) {
     fillNoteTaskSelect(null);
     $('#n-day').value = '';
     $('#btn-note-delete').classList.add('hidden');
+  }
+  if (dayPicker) {
+    dayPicker.refreshTrigger();
+    dayPicker.close();
   }
   showView('noteform');
   setTimeout(() => $('#n-title').focus(), 50);
@@ -978,7 +1077,7 @@ async function submitNoteForm(e) {
       id: `n-${Date.now()}-${Math.floor(Math.random() * 1e4)}`,
       ...payload,
       profileId: state.config.activeProfileId,
-      projectId: state.config.activeProjectId,
+      projectId: effectiveProjectId(),
       createdAt: Date.now(),
     });
   }
@@ -1004,6 +1103,7 @@ function renderSettings() {
   $('#s-cardmode').value = state.config.cardMode;
   $('#s-stream').checked = state.config.showWhenStreaming;
   $('#s-recurring').checked = state.config.showRecurring;
+  $('#s-badge').checked = state.config.showBubbleBadge;
   $('#s-sort-field').value = state.config.sort.field;
   $('#s-sort-dir').value = state.config.sort.dir;
   renderPriorityEditor();
@@ -1193,6 +1293,29 @@ function renderProfileEditor() {
     head.append(pOrder, pName, delP);
     block.appendChild(head);
 
+    // Opção: agregar todos os projetos numa aba "Tudo".
+    const mergeLabel = document.createElement('label');
+    mergeLabel.className = 'check-field check-field--sm';
+    const mergeChk = document.createElement('input');
+    mergeChk.type = 'checkbox';
+    mergeChk.checked = !!profile.mergeProjects;
+    mergeChk.addEventListener('change', () => {
+      profile.mergeProjects = mergeChk.checked;
+      // Se desligou enquanto a aba "Tudo" estava ativa, volta ao 1º projeto.
+      if (
+        !mergeChk.checked &&
+        state.config.activeProfileId === profile.id &&
+        state.config.activeProjectId === ALL_PROJECTS
+      ) {
+        state.config.activeProjectId = profile.projects[0].id;
+      }
+      refreshAfterStructureChange();
+    });
+    const mergeText = document.createElement('span');
+    mergeText.textContent = 'Mostrar todos os projetos numa aba "Tudo"';
+    mergeLabel.append(mergeChk, mergeText);
+    block.appendChild(mergeLabel);
+
     profile.projects.forEach((proj, jIdx) => {
       const row = document.createElement('div');
       row.className = 'project-row';
@@ -1254,6 +1377,198 @@ function removeTasksOf(profileId, projectId) {
     if (match) (t.attachments || []).forEach((a) => window.api.deleteAttachment(a.path));
     return !match;
   });
+}
+
+// ============================================================
+//  Date/time picker customizado (no estilo do app, com Confirmar)
+// ============================================================
+let deadlinePicker = null;
+let dayPicker = null;
+
+const pad2 = (n) => String(n).padStart(2, '0');
+const WEEKDAYS_SHORT = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+
+function setupPicker(triggerEl, inputEl, pickerEl, mode) {
+  const isDateTime = mode === 'datetime';
+  let work; // Date em edição
+  let viewY;
+  let viewM;
+
+  const parseInput = (v) => (isDateTime ? new Date(v) : new Date(`${v}T00:00`));
+
+  function refreshTrigger() {
+    if (!inputEl.value) {
+      triggerEl.textContent = isDateTime ? 'Selecionar data e hora' : 'Selecionar dia';
+      triggerEl.classList.add('picker-trigger--empty');
+      return;
+    }
+    const d = parseInput(inputEl.value);
+    triggerEl.classList.remove('picker-trigger--empty');
+    triggerEl.textContent = isDateTime
+      ? d.toLocaleString('pt-BR', {
+          day: '2-digit',
+          month: '2-digit',
+          year: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit',
+        })
+      : d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  }
+
+  function close() {
+    pickerEl.classList.add('hidden');
+  }
+
+  function open() {
+    const base = inputEl.value ? parseInput(inputEl.value) : new Date();
+    work = new Date(base);
+    viewY = work.getFullYear();
+    viewM = work.getMonth();
+    render();
+    pickerEl.classList.remove('hidden');
+  }
+
+  function render() {
+    pickerEl.innerHTML = '';
+
+    // Cabeçalho com navegação de mês
+    const head = document.createElement('div');
+    head.className = 'picker__head';
+    const prev = document.createElement('button');
+    prev.type = 'button';
+    prev.className = 'round-btn';
+    prev.textContent = '‹';
+    prev.addEventListener('click', () => {
+      viewM -= 1;
+      if (viewM < 0) {
+        viewM = 11;
+        viewY -= 1;
+      }
+      render();
+    });
+    const titleEl = document.createElement('span');
+    titleEl.className = 'picker__title';
+    const t = new Date(viewY, viewM, 1).toLocaleDateString('pt-BR', {
+      month: 'long',
+      year: 'numeric',
+    });
+    titleEl.textContent = t.charAt(0).toUpperCase() + t.slice(1);
+    const next = document.createElement('button');
+    next.type = 'button';
+    next.className = 'round-btn';
+    next.textContent = '›';
+    next.addEventListener('click', () => {
+      viewM += 1;
+      if (viewM > 11) {
+        viewM = 0;
+        viewY += 1;
+      }
+      render();
+    });
+    head.append(prev, titleEl, next);
+    pickerEl.appendChild(head);
+
+    // Dias da semana
+    const wd = document.createElement('div');
+    wd.className = 'picker__weekdays';
+    WEEKDAYS_SHORT.forEach((w) => {
+      const s = document.createElement('span');
+      s.textContent = w;
+      wd.appendChild(s);
+    });
+    pickerEl.appendChild(wd);
+
+    // Grade de dias
+    const grid = document.createElement('div');
+    grid.className = 'picker__grid';
+    const first = new Date(viewY, viewM, 1);
+    const start = new Date(viewY, viewM, 1 - first.getDay());
+    const todayKey = ymd(new Date());
+    const workKey = ymd(work);
+    for (let i = 0; i < 42; i++) {
+      const d = new Date(start.getFullYear(), start.getMonth(), start.getDate() + i);
+      const key = ymd(d);
+      const cell = document.createElement('button');
+      cell.type = 'button';
+      cell.className = 'picker__cell';
+      if (d.getMonth() !== viewM) cell.classList.add('other-month');
+      if (key === todayKey) cell.classList.add('today');
+      if (key === workKey) cell.classList.add('selected');
+      cell.textContent = d.getDate();
+      cell.addEventListener('click', () => {
+        work = new Date(d.getFullYear(), d.getMonth(), d.getDate(), work.getHours(), work.getMinutes());
+        viewY = work.getFullYear();
+        viewM = work.getMonth();
+        render();
+      });
+      grid.appendChild(cell);
+    }
+    pickerEl.appendChild(grid);
+
+    // Linha de horário (apenas datetime)
+    if (isDateTime) {
+      const timeRow = document.createElement('div');
+      timeRow.className = 'picker__time';
+      const label = document.createElement('span');
+      label.textContent = 'Hora:';
+      const hSel = document.createElement('select');
+      for (let h = 0; h < 24; h++) {
+        const o = document.createElement('option');
+        o.value = h;
+        o.textContent = pad2(h);
+        hSel.appendChild(o);
+      }
+      hSel.value = work.getHours();
+      hSel.addEventListener('change', () => work.setHours(parseInt(hSel.value, 10)));
+      const sep = document.createElement('span');
+      sep.textContent = ':';
+      const mSel = document.createElement('select');
+      for (let m = 0; m < 60; m++) {
+        const o = document.createElement('option');
+        o.value = m;
+        o.textContent = pad2(m);
+        mSel.appendChild(o);
+      }
+      mSel.value = work.getMinutes();
+      mSel.addEventListener('change', () => work.setMinutes(parseInt(mSel.value, 10)));
+      timeRow.append(label, hSel, sep, mSel);
+      pickerEl.appendChild(timeRow);
+    }
+
+    // Rodapé: Limpar / Confirmar
+    const foot = document.createElement('div');
+    foot.className = 'picker__foot';
+    const clear = document.createElement('button');
+    clear.type = 'button';
+    clear.className = 'btn btn--ghost';
+    clear.textContent = 'Limpar';
+    clear.addEventListener('click', () => {
+      inputEl.value = '';
+      refreshTrigger();
+      close();
+    });
+    const confirm = document.createElement('button');
+    confirm.type = 'button';
+    confirm.className = 'btn btn--primary';
+    confirm.textContent = 'Confirmar';
+    confirm.addEventListener('click', () => {
+      inputEl.value = isDateTime
+        ? `${work.getFullYear()}-${pad2(work.getMonth() + 1)}-${pad2(work.getDate())}T${pad2(work.getHours())}:${pad2(work.getMinutes())}`
+        : `${work.getFullYear()}-${pad2(work.getMonth() + 1)}-${pad2(work.getDate())}`;
+      refreshTrigger();
+      close();
+    });
+    foot.append(clear, confirm);
+    pickerEl.appendChild(foot);
+  }
+
+  triggerEl.addEventListener('click', () => {
+    if (pickerEl.classList.contains('hidden')) open();
+    else close();
+  });
+
+  refreshTrigger();
+  return { refreshTrigger, close };
 }
 
 // ============================================================
@@ -1410,17 +1725,6 @@ function bindEvents() {
     renderDraftAttachments();
   });
 
-  // Date picker fácil: clicar/focar o campo abre o calendário nativo.
-  const deadline = $('#f-deadline');
-  const openPicker = () => {
-    try {
-      deadline.showPicker();
-    } catch (e) {
-      /* navegador sem showPicker: cai no comportamento padrão */
-    }
-  };
-  deadline.addEventListener('focus', openPicker);
-  deadline.addEventListener('click', openPicker);
 
   $('#btn-cardmode').addEventListener('click', () => {
     state.config.cardMode = state.config.cardMode === 'compact' ? 'detailed' : 'compact';
@@ -1522,6 +1826,12 @@ function bindEvents() {
     renderList();
   });
 
+  $('#s-badge').addEventListener('change', (e) => {
+    state.config.showBubbleBadge = e.target.checked;
+    persist();
+    updateBubbleBadge();
+  });
+
   $('#s-sort-field').addEventListener('change', (e) => {
     state.config.sort.field = e.target.value;
     persist();
@@ -1574,6 +1884,13 @@ async function init() {
   applyStreamVisibility();
   fillPrioritySelect();
   bindEvents();
+  deadlinePicker = setupPicker(
+    $('#f-deadline-btn'),
+    $('#f-deadline'),
+    $('#f-deadline-picker'),
+    'datetime'
+  );
+  dayPicker = setupPicker($('#n-day-btn'), $('#n-day'), $('#n-day-picker'), 'date');
   initDrag();
   initResize();
   bindTabsWheel();

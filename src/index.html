@@ -68,10 +68,12 @@
               <select id="n-task"></select>
             </label>
 
-            <label class="field">
+            <div class="field">
               <span>Vincular a um dia (opcional)</span>
-              <input type="date" id="n-day" />
-            </label>
+              <button type="button" id="n-day-btn" class="picker-trigger">Selecionar dia</button>
+              <input type="hidden" id="n-day" />
+              <div id="n-day-picker" class="picker hidden"></div>
+            </div>
 
             <div class="form__buttons">
               <button type="button" id="btn-note-delete" class="btn btn--danger hidden">Excluir</button>
@@ -118,10 +120,12 @@
               <textarea id="f-desc" rows="3" placeholder="Detalhes da tarefa..."></textarea>
             </label>
 
-            <label class="field">
+            <div class="field">
               <span>Prazo</span>
-              <input type="datetime-local" id="f-deadline" />
-            </label>
+              <button type="button" id="f-deadline-btn" class="picker-trigger">Selecionar data e hora</button>
+              <input type="hidden" id="f-deadline" />
+              <div id="f-deadline-picker" class="picker hidden"></div>
+            </div>
 
             <label class="field">
               <span>Recorrência</span>
@@ -197,6 +201,11 @@
                 <label class="check-field">
                   <input type="checkbox" id="s-recurring" />
                   <span>Mostrar tarefas recorrentes</span>
+                </label>
+
+                <label class="check-field">
+                  <input type="checkbox" id="s-badge" />
+                  <span>Mostrar contador no botão flutuante</span>
                 </label>
 
                 <div class="field">

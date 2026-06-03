@@ -53,6 +53,8 @@ const DEFAULT_DATA = {
     theme: 'midnight',
     // Mostrar (ou não) tarefas recorrentes na lista
     showRecurring: true,
+    // Mostrar o contador (badge vermelho) no botão flutuante recolhido
+    showBubbleBadge: true,
     // Posição manual do painel { left, top } ou null (canto sup. direito)
     position: null,
   },
@@ -78,9 +80,12 @@ function normalize(data) {
     c.activeProfileId = firstProfile.id;
   }
   const activeProfile = c.profiles.find((p) => p.id === c.activeProfileId);
+  // '__all__' é a aba agregada "Tudo" (válida só quando a seção a habilita).
+  const allowAll = activeProfile.mergeProjects && c.activeProjectId === '__all__';
   if (
-    !c.activeProjectId ||
-    !activeProfile.projects.find((pj) => pj.id === c.activeProjectId)
+    !allowAll &&
+    (!c.activeProjectId ||
+      !activeProfile.projects.find((pj) => pj.id === c.activeProjectId))
   ) {
     c.activeProjectId = activeProfile.projects[0].id;
   }
@@ -92,6 +97,7 @@ function normalize(data) {
   if (c.showWhenStreaming === undefined) c.showWhenStreaming = true;
   if (!c.theme) c.theme = 'midnight';
   if (c.showRecurring === undefined) c.showRecurring = true;
+  if (c.showBubbleBadge === undefined) c.showBubbleBadge = true;
 
   // Garante vínculo válido de seção/projeto (tarefas e notas órfãs).
   const fixOwnership = (item) => {
