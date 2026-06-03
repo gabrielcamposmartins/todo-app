@@ -19,8 +19,24 @@ if (-not $env:GH_TOKEN) { throw "GH_TOKEN não definido no .env" }
 # Não assinamos o app; evita o passo de winCodeSign.
 $env:CSC_IDENTITY_AUTO_DISCOVERY = 'false'
 
-Write-Host "==> Publicando release no GitHub (electron-builder --publish always)..." -ForegroundColor Cyan
+Write-Host "==> Enviando build/instalador para o GitHub (rascunho)..." -ForegroundColor Cyan
 npx electron-builder --publish always
 
-Write-Host "==> Concluido. Verifique as releases em:" -ForegroundColor Green
-Write-Host "    https://github.com/gabrielcamposmartins/todo-app/releases"
+# O electron-builder cria a release como RASCUNHO (assim todos os assets sobem
+# antes de ficar pública). Aqui publicamos o rascunho automaticamente.
+$repo = 'gabrielcamposmartins/todo-app'
+$h = @{ Authorization = "token $env:GH_TOKEN"; 'User-Agent' = 'todo-app' }
+$releases = Invoke-RestMethod -Uri "https://api.github.com/repos/$repo/releases" -Headers $h
+$draft = $releases | Where-Object { $_.draft } | Select-Object -First 1
+if ($draft) {
+    $body = @{ draft = $false } | ConvertTo-Json
+    $pub = Invoke-RestMethod -Method Patch `
+        -Uri "https://api.github.com/repos/$repo/releases/$($draft.id)" `
+        -Headers $h -Body $body -ContentType 'application/json'
+    Write-Host "==> Release publicada: $($pub.tag_name) -> $($pub.html_url)" -ForegroundColor Green
+} else {
+    Write-Host "==> Nenhum rascunho pendente (release ja publicada)." -ForegroundColor Yellow
+}
+
+Write-Host "==> Concluido. Releases em:" -ForegroundColor Green
+Write-Host "    https://github.com/$repo/releases"
