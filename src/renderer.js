@@ -5,6 +5,7 @@ let state = { config: null, tasks: [] };
 let editingId = null; // id da tarefa em edição (null = nova)
 let draftAttachments = []; // anexos do formulário atual
 const expandedIds = new Set(); // cards expandidos (clique expande, não edita)
+const expandedNoteExt = new Set(); // mini-cards de nota expandidos dentro do to-do
 
 const $ = (sel) => document.querySelector(sel);
 
@@ -161,15 +162,30 @@ function showView(name) {
 //  Aparência (opacidade / largura / modos)
 // ============================================================
 function applyAppearance() {
-  const { opacity, width, height, cardMode } = state.config;
+  const { opacity, width, height, cardMode, enlarged } = state.config;
   document.documentElement.style.setProperty('--panel-opacity', opacity);
   const panel = $('#panel');
+
+  document.body.classList.toggle('cards-compact', cardMode === 'compact');
+  document.body.classList.toggle('enlarged', enlarged);
+  $('#btn-cardmode').classList.toggle('toggled', cardMode === 'compact');
+  $('#btn-enlarge').classList.toggle('toggled', enlarged);
+
+  if (enlarged) {
+    // Painel ocupa a tela com margens (%) em todos os lados.
+    const m = Math.max(0, Math.min(45, state.config.enlargedMargin));
+    panel.style.right = 'auto';
+    panel.style.left = `${m}%`;
+    panel.style.top = `${m}%`;
+    panel.style.width = `${100 - 2 * m}%`;
+    panel.style.height = `${100 - 2 * m}%`;
+    return;
+  }
+
   panel.style.width = `${width}px`;
   // No modo passivo a altura acompanha os cards (ignora altura fixa do resize).
   const passive = state.config.displayMode === 'passive';
   panel.style.height = !passive && height ? `${height}px` : '';
-  document.body.classList.toggle('cards-compact', cardMode === 'compact');
-  $('#btn-cardmode').classList.toggle('toggled', cardMode === 'compact');
   applyPosition();
 }
 
@@ -537,20 +553,45 @@ function renderList() {
     }
     if (meta.childNodes.length) li.appendChild(meta);
 
-    // Notas vinculadas (lista visível quando o card está expandido)
+    // Notas vinculadas: mini-cards que expandem ao clicar (não vão para edição).
     if (linkedNotes.length) {
       const notesBox = document.createElement('div');
       notesBox.className = 'card__notes';
       linkedNotes.forEach((n) => {
-        const row = document.createElement('div');
-        row.className = 'card__note';
-        row.textContent = `🗒 ${n.title || '(sem título)'}`;
-        row.title = n.content || '';
-        row.addEventListener('click', (e) => {
+        const mini = document.createElement('div');
+        mini.className = 'card__note' + (expandedNoteExt.has(n.id) ? ' expanded' : '');
+
+        const mTitle = document.createElement('div');
+        mTitle.className = 'card__note-title';
+        mTitle.textContent = `🗒 ${n.title || '(sem título)'}`;
+        mini.appendChild(mTitle);
+
+        if (n.content) {
+          const mContent = document.createElement('div');
+          mContent.className = 'card__note-content';
+          mContent.textContent = n.content;
+          mini.appendChild(mContent);
+        }
+
+        // Botão discreto para editar (visível quando o mini-card está expandido).
+        const editBtn = document.createElement('button');
+        editBtn.className = 'card__note-edit';
+        editBtn.textContent = '✎ Editar nota';
+        editBtn.addEventListener('click', (e) => {
           e.stopPropagation();
           openNoteForm(n.id);
         });
-        notesBox.appendChild(row);
+        mini.appendChild(editBtn);
+
+        // Clique expande/recolhe o mini-card (não edita, não mexe no to-do).
+        mini.addEventListener('click', (e) => {
+          e.stopPropagation();
+          if (expandedNoteExt.has(n.id)) expandedNoteExt.delete(n.id);
+          else expandedNoteExt.add(n.id);
+          mini.classList.toggle('expanded');
+        });
+
+        notesBox.appendChild(mini);
       });
       li.appendChild(notesBox);
     }
@@ -1100,6 +1141,8 @@ async function deleteNote(id) {
 function renderSettings() {
   renderThemeOptions();
   $('#s-opacity').value = state.config.opacity;
+  $('#s-margin').value = state.config.enlargedMargin;
+  $('#s-margin-val').textContent = `${state.config.enlargedMargin}%`;
   $('#s-cardmode').value = state.config.cardMode;
   $('#s-stream').checked = state.config.showWhenStreaming;
   $('#s-recurring').checked = state.config.showRecurring;
@@ -1735,6 +1778,13 @@ function bindEvents() {
   $('#btn-passive').addEventListener('click', () => setDisplayMode('passive'));
   $('#passive-exit').addEventListener('click', () => setDisplayMode('normal'));
 
+  $('#btn-enlarge').addEventListener('click', () => {
+    state.config.enlarged = !state.config.enlarged;
+    applyAppearance();
+    refreshInteractivity();
+    persist();
+  });
+
   // Calendário: o botão alterna entre lista e calendário.
   $('#btn-calendar').addEventListener('click', () => {
     if (isCalendarOpen()) {
@@ -1791,6 +1841,8 @@ function bindEvents() {
   $('#bubble').addEventListener('click', () => setDisplayMode('normal'));
   $('#btn-quit').addEventListener('click', () => window.api.quit());
 
+  bindUpdate();
+
   // Aparência ao vivo
   $('#s-opacity').addEventListener('input', (e) => {
     state.config.opacity = parseFloat(e.target.value);
@@ -1805,6 +1857,13 @@ function bindEvents() {
     applyAppearance();
     persist();
   });
+
+  $('#s-margin').addEventListener('input', (e) => {
+    state.config.enlargedMargin = parseInt(e.target.value, 10);
+    $('#s-margin-val').textContent = `${state.config.enlargedMargin}%`;
+    if (state.config.enlarged) applyAppearance();
+  });
+  $('#s-margin').addEventListener('change', persist);
 
   $('#s-theme').addEventListener('change', (e) => setTheme(e.target.value));
 
@@ -1871,6 +1930,65 @@ function bindEvents() {
   // Atalho global Ctrl+Alt+M: alterna passivo <-> normal.
   window.api.onTogglePassive(() => {
     setDisplayMode(state.config.displayMode === 'passive' ? 'normal' : 'passive');
+  });
+}
+
+// ============================================================
+//  Atualização (electron-updater)
+// ============================================================
+function bindUpdate() {
+  const status = $('#upd-status');
+  const dlBtn = $('#btn-upd-download');
+  const instBtn = $('#btn-upd-install');
+
+  window.api.getVersion().then((v) => {
+    $('#upd-version').textContent = `v${v}`;
+  });
+
+  $('#btn-upd-check').addEventListener('click', async () => {
+    status.textContent = 'Verificando...';
+    dlBtn.classList.add('hidden');
+    instBtn.classList.add('hidden');
+    const r = await window.api.checkUpdate();
+    if (r.state === 'dev') {
+      status.textContent = 'Disponível apenas na versão instalada do app.';
+    } else if (r.state === 'error') {
+      status.textContent = `Erro: ${r.message}`;
+    }
+  });
+
+  dlBtn.addEventListener('click', () => {
+    status.textContent = 'Baixando... 0%';
+    dlBtn.classList.add('hidden');
+    window.api.downloadUpdate();
+  });
+
+  instBtn.addEventListener('click', () => window.api.installUpdate());
+
+  window.api.onUpdateStatus((p) => {
+    switch (p.state) {
+      case 'checking':
+        status.textContent = 'Verificando atualizações...';
+        break;
+      case 'none':
+        status.textContent = `Você está na versão mais recente${p.version ? ` (v${p.version})` : ''}.`;
+        break;
+      case 'available':
+        status.textContent = `Nova versão v${p.version} disponível.`;
+        dlBtn.classList.remove('hidden');
+        break;
+      case 'downloading':
+        status.textContent = `Baixando... ${p.percent || 0}%`;
+        break;
+      case 'downloaded':
+        status.textContent = `Versão v${p.version} baixada. Pronta para instalar.`;
+        dlBtn.classList.add('hidden');
+        instBtn.classList.remove('hidden');
+        break;
+      case 'error':
+        status.textContent = `Erro: ${p.message || ''}`;
+        break;
+    }
   });
 }
 

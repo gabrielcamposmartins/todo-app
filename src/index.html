@@ -27,6 +27,7 @@
             <button id="btn-notes" class="round-btn" title="Notas">🗒</button>
             <button id="btn-cardmode" class="round-btn" title="Alternar modo do card (compacto/detalhado)">▤</button>
             <button id="btn-passive" class="round-btn" title="Modo passivo (cards sem botões) — Ctrl+Alt+M para voltar">👁</button>
+            <button id="btn-enlarge" class="round-btn" title="Modo ampliado (tela cheia com margens)">⛶</button>
             <button id="btn-settings" class="round-btn" title="Configurações">⚙</button>
             <button id="btn-collapse" class="round-btn" title="Recolher">▾</button>
           </div>
@@ -187,6 +188,12 @@
                   <small class="hint">Arraste as bordas/cantos do painel para redimensionar e a alça ⠿ para mover.</small>
                   <button type="button" id="btn-reset-size" class="btn btn--ghost">Restaurar tamanho e posição</button>
                 </div>
+
+                <div class="field">
+                  <span>Margem do modo ampliado (%)</span>
+                  <input type="range" id="s-margin" min="0" max="45" step="1" />
+                  <small id="s-margin-val" class="hint"></small>
+                </div>
               </div>
             </details>
 
@@ -244,6 +251,19 @@
                   <small class="hint">Abas do topo. Use ▲▼ para reordenar.</small>
                   <div id="profile-editor" class="profile-editor"></div>
                   <button type="button" id="btn-add-profile" class="btn btn--ghost">+ Nova seção</button>
+                </div>
+              </div>
+            </details>
+
+            <details class="settings-group">
+              <summary>Atualização</summary>
+              <div class="settings-group__body">
+                <div class="field">
+                  <small class="hint">Versão atual: <span id="upd-version">—</span></small>
+                  <button type="button" id="btn-upd-check" class="btn btn--ghost">Verificar atualizações</button>
+                  <p id="upd-status" class="hint"></p>
+                  <button type="button" id="btn-upd-download" class="btn btn--primary hidden">Baixar atualização</button>
+                  <button type="button" id="btn-upd-install" class="btn btn--primary hidden">Reiniciar e instalar</button>
                 </div>
               </div>
             </details>

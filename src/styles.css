@@ -74,6 +74,7 @@ body {
   display: flex;
   gap: 6px;
   justify-content: flex-end;
+  flex-wrap: wrap;
 }
 
 /* ---------- Abas de perfil / projeto ---------- */
@@ -244,8 +245,10 @@ body {
   right: 0;
   cursor: nwse-resize;
 }
-/* Sem redimensionar no modo passivo */
-body.mode-passive .resizer {
+/* Sem redimensionar/mover no modo passivo ou ampliado */
+body.mode-passive .resizer,
+body.enlarged .resizer,
+body.enlarged .drag-grip {
   display: none;
 }
 
@@ -797,13 +800,45 @@ textarea {
   font-size: 11px;
   color: var(--text-dim);
   cursor: pointer;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 .card__note:hover {
   background: rgba(255, 255, 255, 0.12);
   color: var(--text);
+}
+.card__note-title {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 600;
+}
+.card__note-content {
+  display: none;
+  margin-top: 5px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-weight: 400;
+  color: var(--text);
+}
+.card__note.expanded .card__note-content {
+  display: block;
+}
+.card__note-edit {
+  display: none;
+  margin-top: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: var(--text);
+  border-radius: 6px;
+  font-size: 10px;
+  padding: 3px 7px;
+  cursor: pointer;
+  font-family: inherit;
+}
+.card__note-edit:hover {
+  background: rgba(255, 255, 255, 0.18);
+}
+.card__note.expanded .card__note-edit {
+  display: inline-block;
 }
 
 /* ---------- Date/time picker customizado ---------- */

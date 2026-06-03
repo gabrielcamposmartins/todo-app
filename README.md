@@ -53,6 +53,36 @@ Iniciar automaticamente. Use-o para instalar em outras máquinas.
 Remove-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' -Name 'TODO-APP'
 ```
 
+## Atualização automática (releases do GitHub)
+
+Em **Configurações → Atualização** o app verifica se há uma nova release no
+GitHub e permite **baixar e instalar** sem reinstalar manualmente (via
+`electron-updater`). Funciona apenas na **versão instalada/empacotada** — em
+desenvolvimento aparece "Disponível apenas na versão instalada".
+
+Para publicar uma nova versão que os apps instalados conseguem detectar:
+
+1. Suba a versão em `package.json` (ex.: `0.1.0` → `0.2.0`).
+2. Gere e publique a release (precisa de um token do GitHub com permissão de
+   `repo`):
+
+   ```powershell
+   $env:GH_TOKEN = "<seu_token_github>"
+   npx electron-builder --publish always
+   ```
+
+   Isso cria a release `vX.Y.Z` no repositório e anexa os arquivos que o
+   updater precisa: o instalador `TODO-APP-Setup-X.Y.Z.exe`, o `latest.yml` e o
+   `.blockmap`.
+
+3. Os apps instalados passam a encontrar a nova versão ao clicar em
+   **Verificar atualizações** (ou na próxima checagem).
+
+> O destino das releases é configurado em `build.publish` no `package.json`
+> (provider `github`, repo `gabrielcamposmartins/todo-app`). Reconstrua o app
+> (`npm run setup`) após adicionar essa config para que o `app-update.yml` seja
+> embutido no executável.
+
 ## Funcionalidades
 
 - **Posição:** arraste pela **alça (⠿) à direita** dos cards para mover o app

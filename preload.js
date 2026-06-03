@@ -22,4 +22,12 @@ contextBridge.exposeInMainWorld('api', {
     ipcRenderer.invoke('attachments:delete', filePath),
 
   quit: () => ipcRenderer.send('app:quit'),
+
+  // Atualização
+  getVersion: () => ipcRenderer.invoke('app:version'),
+  checkUpdate: () => ipcRenderer.invoke('update:check'),
+  downloadUpdate: () => ipcRenderer.invoke('update:download'),
+  installUpdate: () => ipcRenderer.invoke('update:install'),
+  onUpdateStatus: (cb) =>
+    ipcRenderer.on('update:status', (_evt, payload) => cb(payload)),
 });

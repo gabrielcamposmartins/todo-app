@@ -8,6 +8,7 @@ const {
 } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const { autoUpdater } = require('electron-updater');
 
 const USER_DIR = app.getPath('userData');
 const DATA_FILE = path.join(USER_DIR, 'data.json');
@@ -57,6 +58,9 @@ const DEFAULT_DATA = {
     showBubbleBadge: true,
     // Posição manual do painel { left, top } ou null (canto sup. direito)
     position: null,
+    // Modo ampliado: painel ocupa a tela com margens (%) parametrizáveis
+    enlarged: false,
+    enlargedMargin: 20,
   },
   tasks: [],
   notes: [],
@@ -98,6 +102,8 @@ function normalize(data) {
   if (!c.theme) c.theme = 'midnight';
   if (c.showRecurring === undefined) c.showRecurring = true;
   if (c.showBubbleBadge === undefined) c.showBubbleBadge = true;
+  if (typeof c.enlarged !== 'boolean') c.enlarged = false;
+  if (typeof c.enlargedMargin !== 'number') c.enlargedMargin = 20;
 
   // Garante vínculo válido de seção/projeto (tarefas e notas órfãs).
   const fixOwnership = (item) => {
@@ -268,6 +274,61 @@ ipcMain.handle('attachments:delete', (_evt, filePath) => {
 });
 
 ipcMain.on('app:quit', () => app.quit());
+
+// ---------- Atualização automática (electron-updater) ----------
+
+autoUpdater.autoDownload = false; // o usuário decide quando baixar
+autoUpdater.autoInstallOnAppQuit = true;
+
+function sendUpdate(payload) {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('update:status', payload);
+  }
+}
+
+autoUpdater.on('checking-for-update', () => sendUpdate({ state: 'checking' }));
+autoUpdater.on('update-available', (info) =>
+  sendUpdate({ state: 'available', version: info.version })
+);
+autoUpdater.on('update-not-available', (info) =>
+  sendUpdate({ state: 'none', version: info.version })
+);
+autoUpdater.on('error', (err) =>
+  sendUpdate({ state: 'error', message: (err && err.message) || String(err) })
+);
+autoUpdater.on('download-progress', (p) =>
+  sendUpdate({ state: 'downloading', percent: Math.round(p.percent) })
+);
+autoUpdater.on('update-downloaded', (info) =>
+  sendUpdate({ state: 'downloaded', version: info.version })
+);
+
+ipcMain.handle('app:version', () => app.getVersion());
+
+ipcMain.handle('update:check', async () => {
+  // Auto-update só funciona na versão empacotada/instalada.
+  if (!app.isPackaged) return { state: 'dev' };
+  try {
+    await autoUpdater.checkForUpdates();
+    return { state: 'checking' };
+  } catch (err) {
+    return { state: 'error', message: (err && err.message) || String(err) };
+  }
+});
+
+ipcMain.handle('update:download', async () => {
+  try {
+    await autoUpdater.downloadUpdate();
+    return true;
+  } catch (err) {
+    sendUpdate({ state: 'error', message: (err && err.message) || String(err) });
+    return false;
+  }
+});
+
+ipcMain.handle('update:install', () => {
+  autoUpdater.quitAndInstall();
+});
 
 // ---------- Ciclo de vida ----------
 
