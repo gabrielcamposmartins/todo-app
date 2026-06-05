@@ -1,0 +1,328 @@
+{
+  "config": {
+    "opacity": 0.65,
+    "width": 331,
+    "height": 742,
+    "priorities": [
+      {
+        "id": "p-alta",
+        "name": "Alta",
+        "color": "#ff4d4f",
+        "weight": 1
+      },
+      {
+        "id": "p-media",
+        "name": "Média",
+        "color": "#faad14",
+        "weight": 2
+      },
+      {
+        "id": "p-baixa",
+        "name": "Baixa",
+        "color": "#52c41a",
+        "weight": 3
+      },
+      {
+        "id": "p-1780445482915",
+        "name": "Não aplica",
+        "color": "#00bfff",
+        "weight": 4
+      }
+    ],
+    "sort": {
+      "field": "manual",
+      "dir": "asc"
+    },
+    "profiles": [
+      {
+        "id": "pf-1780437493372",
+        "name": "Pessoal",
+        "projects": [
+          {
+            "id": "pj-1780437493372",
+            "name": "Financeiro"
+          },
+          {
+            "id": "pj-1780443915705-5063",
+            "name": "Fitness"
+          },
+          {
+            "id": "pj-1780444500990-7374",
+            "name": "TODO-app"
+          },
+          {
+            "id": "pj-1780445426752-1110",
+            "name": "A comprar"
+          }
+        ],
+        "mergeProjects": true
+      },
+      {
+        "id": "pf-geral",
+        "name": "Trabalho",
+        "projects": [
+          {
+            "id": "pj-geral",
+            "name": "Scope"
+          },
+          {
+            "id": "pj-1780423146739-819",
+            "name": "Autosystem"
+          }
+        ],
+        "mergeProjects": true
+      }
+    ],
+    "activeProfileId": "pf-geral",
+    "activeProjectId": "pj-geral",
+    "cardMode": "detailed",
+    "displayMode": "normal",
+    "showWhenStreaming": true,
+    "theme": "rose",
+    "showRecurring": true,
+    "showBubbleBadge": true,
+    "completedRetention": "day",
+    "position": {
+      "left": 1539,
+      "top": 110
+    },
+    "enlarged": false,
+    "enlargedMargin": 5,
+    "mergeSections": true
+  },
+  "tasks": [
+    {
+      "id": "t-1780421841489-8462",
+      "name": "Ajustar Edge Functions - Scope",
+      "priorityId": "p-alta",
+      "description": "Ajustar Edge Functions - Scope",
+      "deadline": "2026-06-02T20:00:00.000Z",
+      "attachments": [],
+      "done": true,
+      "createdAt": 1780421841489,
+      "profileId": "pf-geral",
+      "projectId": "pj-geral",
+      "order": 3
+    },
+    {
+      "id": "t-1780422660157-4601",
+      "name": "Editar token assets - hml",
+      "priorityId": "p-media",
+      "description": "Editar token da edge function de assets",
+      "deadline": null,
+      "attachments": [],
+      "profileId": "pf-geral",
+      "projectId": "pj-geral",
+      "done": true,
+      "createdAt": 1780422660157,
+      "recurrence": "none",
+      "order": 2
+    },
+    {
+      "id": "t-1780432122723-6826",
+      "name": ".env no scope-secrets",
+      "priorityId": "p-alta",
+      "description": "salvar o .env no scope-secrets para o futuro",
+      "deadline": null,
+      "attachments": [],
+      "profileId": "pf-geral",
+      "projectId": "pj-geral",
+      "done": true,
+      "createdAt": 1780432122724,
+      "recurrence": "none",
+      "order": 4
+    },
+    {
+      "id": "t-1780432930170-1253",
+      "name": "Scope da tool de pesquisa",
+      "priorityId": "p-media",
+      "description": "Scope da tool de pesquisa passar a ser uma lista nos metadados para acessar outros projetos liberados",
+      "deadline": null,
+      "attachments": [],
+      "profileId": "pf-geral",
+      "projectId": "pj-geral",
+      "done": false,
+      "createdAt": 1780432930170,
+      "order": 0
+    },
+    {
+      "id": "t-1780433284646-2931",
+      "name": "Adicionar hash na api da engine",
+      "priorityId": "p-baixa",
+      "description": "Adicionar hash na api da engine para segurança no header da request",
+      "deadline": null,
+      "attachments": [],
+      "profileId": "pf-geral",
+      "projectId": "pj-geral",
+      "done": false,
+      "createdAt": 1780433284646,
+      "recurrence": "none",
+      "order": 1
+    },
+    {
+      "id": "t-1780437576854-5082",
+      "name": "Gerar nota",
+      "priorityId": "p-alta",
+      "description": "Gerar a nota pra mandar pra empresa",
+      "deadline": "2026-06-03T23:18:00.000Z",
+      "attachments": [],
+      "profileId": "pf-1780437493372",
+      "projectId": "pj-1780437493372",
+      "done": false,
+      "createdAt": 1780437576854,
+      "recurrence": "none",
+      "order": 5
+    },
+    {
+      "id": "t-1780438759627-3807",
+      "name": "Falar com a Vivian",
+      "priorityId": "p-alta",
+      "description": "",
+      "deadline": "2026-06-02T22:30:00.000Z",
+      "recurrence": "none",
+      "attachments": [],
+      "profileId": "pf-1780437493372",
+      "projectId": "pj-1780437493372",
+      "done": true,
+      "createdAt": 1780438759627,
+      "order": 6
+    },
+    {
+      "id": "t-1780438817593-5243",
+      "name": "Pagar contas do mês",
+      "priorityId": "p-baixa",
+      "description": "",
+      "deadline": "2026-06-15T08:20:00.000Z",
+      "recurrence": "none",
+      "attachments": [],
+      "profileId": "pf-1780437493372",
+      "projectId": "pj-1780437493372",
+      "done": false,
+      "createdAt": 1780438817593,
+      "order": 7
+    },
+    {
+      "id": "t-1780444535352-3758",
+      "name": "Opção de remover notificações",
+      "priorityId": "p-baixa",
+      "description": "",
+      "deadline": null,
+      "recurrence": "none",
+      "attachments": [],
+      "profileId": "pf-1780437493372",
+      "projectId": "pj-1780444500990-7374",
+      "done": true,
+      "createdAt": 1780444535352,
+      "order": 8
+    },
+    {
+      "id": "t-1780444566701-7694",
+      "name": "Notas no todo",
+      "priorityId": "p-baixa",
+      "description": "Colocar as notas relacionadas dentro do todo",
+      "deadline": null,
+      "recurrence": "none",
+      "attachments": [],
+      "profileId": "pf-1780437493372",
+      "projectId": "pj-1780444500990-7374",
+      "done": true,
+      "createdAt": 1780444566701,
+      "order": 9
+    },
+    {
+      "id": "t-1780445451083-786",
+      "name": "Máquina de lavar louça",
+      "priorityId": "p-1780445482915",
+      "description": "",
+      "deadline": null,
+      "recurrence": "none",
+      "attachments": [],
+      "profileId": "pf-1780437493372",
+      "projectId": "pj-1780445426752-1110",
+      "done": false,
+      "createdAt": 1780445451083,
+      "order": 10
+    },
+    {
+      "id": "t-1780497649837-5361",
+      "name": "Bike",
+      "priorityId": "p-1780445482915",
+      "description": "",
+      "deadline": "2026-06-04T18:01:21.929Z",
+      "recurrence": "daily",
+      "attachments": [],
+      "profileId": "pf-1780437493372",
+      "projectId": "pj-1780443915705-5063",
+      "done": false,
+      "createdAt": 1780497649837,
+      "order": 11
+    },
+    {
+      "id": "t-1780512197572-6154",
+      "name": "Deve ser permitido reordenar notas e todos com uma barra de drag",
+      "priorityId": "p-1780445482915",
+      "description": "",
+      "deadline": null,
+      "recurrence": "none",
+      "attachments": [],
+      "profileId": "pf-1780437493372",
+      "projectId": "pj-1780444500990-7374",
+      "done": false,
+      "createdAt": 1780512197572,
+      "order": 12
+    }
+  ],
+  "notes": [
+    {
+      "id": "n-1780442274857-4694",
+      "title": "Valor nota",
+      "content": "9.607,92",
+      "taskId": "t-1780437576854-5082",
+      "day": null,
+      "profileId": "pf-1780437493372",
+      "projectId": "pj-1780437493372",
+      "createdAt": 1780442274857,
+      "order": 0
+    },
+    {
+      "id": "n-1780512138688-3069",
+      "title": "Ambientes Supabase",
+      "content": "- Dev:\nhost: mqyytwkatqzaikhxccyz\nsenha: xQsmZMQsfYhqQFjzmfgxYpQFmEYZaaGH\n\n-Main:\nhost: agnfsipmveqdgrpxdjxk\nsenha:DdGeEb?9mEGRxCL",
+      "taskId": null,
+      "day": null,
+      "profileId": "pf-geral",
+      "projectId": "pj-geral",
+      "createdAt": 1780512138688,
+      "order": 1
+    }
+  ],
+  "listItems": [
+    {
+      "id": "l-1780525840091-7205",
+      "text": "Teste 1",
+      "done": false,
+      "profileId": "pf-geral",
+      "projectId": "pj-geral",
+      "order": 2,
+      "createdAt": 1780525840092
+    },
+    {
+      "id": "l-1780525846073-3194",
+      "text": "Teste 2",
+      "done": false,
+      "profileId": "pf-geral",
+      "projectId": "pj-geral",
+      "order": 0,
+      "createdAt": 1780525846073
+    },
+    {
+      "id": "l-1780525848324-4154",
+      "text": "teste 3",
+      "done": false,
+      "profileId": "pf-geral",
+      "projectId": "pj-geral",
+      "order": 1,
+      "createdAt": 1780525848324
+    }
+  ]
+}

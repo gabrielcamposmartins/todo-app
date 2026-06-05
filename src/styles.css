@@ -477,6 +477,34 @@ body.enlarged .drag-grip {
   background: rgba(255, 255, 255, 0.12);
 }
 
+/* ---------- Lista rápida ---------- */
+.quick-add {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.quick-add input {
+  flex: 1;
+  min-width: 0;
+}
+.quick-add .btn {
+  flex: 0 0 auto;
+}
+
+/* ---------- Reordenar por arraste ---------- */
+.card[draggable="true"] {
+  /* o arraste é iniciado pelo próprio card */
+}
+.card.dragging {
+  opacity: 0.5;
+}
+.card.drop-before {
+  box-shadow: inset 0 3px 0 0 var(--accent);
+}
+.card.drop-after {
+  box-shadow: inset 0 -3px 0 0 var(--accent);
+}
+
 /* ---------- Card de tarefa ---------- */
 .card {
   position: relative;
@@ -612,7 +640,8 @@ body.cards-compact .card:not(.expanded) .icon-btn .lbl {
 /* ---------- Modo PASSIVO: só os cards, sem botões/abas, não clicável ---------- */
 body.mode-passive .panel__header,
 body.mode-passive .card__actions,
-body.mode-passive .drag-grip {
+body.mode-passive .drag-grip,
+body.mode-passive .quick-add {
   display: none;
 }
 body.mode-passive .card {

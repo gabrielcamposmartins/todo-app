@@ -56,14 +56,19 @@ const DEFAULT_DATA = {
     showRecurring: true,
     // Mostrar o contador (badge vermelho) no botão flutuante recolhido
     showBubbleBadge: true,
+    // Por quanto tempo concluídos permanecem visíveis: 'day' | 'week' | 'month' | 'never'
+    completedRetention: 'never',
     // Posição manual do painel { left, top } ou null (canto sup. direito)
     position: null,
     // Modo ampliado: painel ocupa a tela com margens (%) parametrizáveis
     enlarged: false,
     enlargedMargin: 20,
+    // Mostrar aba agregada "Tudo" no nível das seções
+    mergeSections: false,
   },
   tasks: [],
   notes: [],
+  listItems: [],
 };
 
 // Garante integridade dos dados (perfis, projetos, campos novos, órfãos).
@@ -79,19 +84,28 @@ function normalize(data) {
     }
   });
 
+  if (typeof c.mergeSections !== 'boolean') c.mergeSections = false;
+
   const firstProfile = c.profiles[0];
-  if (!c.activeProfileId || !c.profiles.find((p) => p.id === c.activeProfileId)) {
+  // '__all_sections__' é a aba agregada "Tudo" das seções (se habilitada).
+  const allowAllSections = c.mergeSections && c.activeProfileId === '__all_sections__';
+  if (
+    !allowAllSections &&
+    (!c.activeProfileId || !c.profiles.find((p) => p.id === c.activeProfileId))
+  ) {
     c.activeProfileId = firstProfile.id;
   }
   const activeProfile = c.profiles.find((p) => p.id === c.activeProfileId);
-  // '__all__' é a aba agregada "Tudo" (válida só quando a seção a habilita).
-  const allowAll = activeProfile.mergeProjects && c.activeProjectId === '__all__';
-  if (
-    !allowAll &&
-    (!c.activeProjectId ||
-      !activeProfile.projects.find((pj) => pj.id === c.activeProjectId))
-  ) {
-    c.activeProjectId = activeProfile.projects[0].id;
+  if (activeProfile) {
+    // '__all__' é a aba agregada "Tudo" dos projetos (se a seção a habilita).
+    const allowAll = activeProfile.mergeProjects && c.activeProjectId === '__all__';
+    if (
+      !allowAll &&
+      (!c.activeProjectId ||
+        !activeProfile.projects.find((pj) => pj.id === c.activeProjectId))
+    ) {
+      c.activeProjectId = activeProfile.projects[0].id;
+    }
   }
 
   if (!c.cardMode) c.cardMode = 'detailed';
@@ -102,6 +116,7 @@ function normalize(data) {
   if (!c.theme) c.theme = 'midnight';
   if (c.showRecurring === undefined) c.showRecurring = true;
   if (c.showBubbleBadge === undefined) c.showBubbleBadge = true;
+  if (!c.completedRetention) c.completedRetention = 'never';
   if (typeof c.enlarged !== 'boolean') c.enlarged = false;
   if (typeof c.enlargedMargin !== 'number') c.enlargedMargin = 20;
 
@@ -120,6 +135,16 @@ function normalize(data) {
   if (!Array.isArray(data.notes)) data.notes = [];
   data.notes.forEach(fixOwnership);
 
+  if (!Array.isArray(data.listItems)) data.listItems = [];
+  data.listItems.forEach(fixOwnership);
+
+  // Garante um campo numérico `order` (usado na reordenação por arraste).
+  [data.tasks, data.notes, data.listItems].forEach((arr) => {
+    arr.forEach((item, i) => {
+      if (typeof item.order !== 'number') item.order = i;
+    });
+  });
+
   return data;
 }
 
@@ -129,17 +154,21 @@ function ensureDirs() {
   }
 }
 
+// Constrói um estado válido a partir de um objeto parseado (defaults + normalize).
+function hydrate(parsed) {
+  return normalize({
+    config: { ...DEFAULT_DATA.config, ...((parsed && parsed.config) || {}) },
+    tasks: Array.isArray(parsed && parsed.tasks) ? parsed.tasks : [],
+    notes: Array.isArray(parsed && parsed.notes) ? parsed.notes : [],
+    listItems: Array.isArray(parsed && parsed.listItems) ? parsed.listItems : [],
+  });
+}
+
 function loadData() {
   try {
     if (fs.existsSync(DATA_FILE)) {
       const raw = fs.readFileSync(DATA_FILE, 'utf-8');
-      const parsed = JSON.parse(raw);
-      // Mescla com defaults para tolerar versões antigas
-      return normalize({
-        config: { ...DEFAULT_DATA.config, ...(parsed.config || {}) },
-        tasks: Array.isArray(parsed.tasks) ? parsed.tasks : [],
-        notes: Array.isArray(parsed.notes) ? parsed.notes : [],
-      });
+      return hydrate(JSON.parse(raw));
     }
   } catch (err) {
     console.error('Falha ao ler data.json, usando defaults:', err);
@@ -207,6 +236,40 @@ ipcMain.handle('data:load', () => loadData());
 
 ipcMain.handle('data:save', (_evt, data) => {
   return saveData(data);
+});
+
+// Exporta o estado atual para um arquivo .json escolhido pelo usuário.
+ipcMain.handle('data:export', async (_evt, data) => {
+  const result = await dialog.showSaveDialog(mainWindow, {
+    title: 'Exportar dados',
+    defaultPath: 'todo-overlay-backup.json',
+    filters: [{ name: 'JSON', extensions: ['json'] }],
+  });
+  if (result.canceled || !result.filePath) return { ok: false, canceled: true };
+  try {
+    fs.writeFileSync(result.filePath, JSON.stringify(data, null, 2), 'utf-8');
+    return { ok: true, path: result.filePath };
+  } catch (err) {
+    return { ok: false, error: String(err) };
+  }
+});
+
+// Importa dados de um arquivo .json (valida/normaliza e grava como atual).
+ipcMain.handle('data:import', async () => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: 'Importar dados',
+    properties: ['openFile'],
+    filters: [{ name: 'JSON', extensions: ['json'] }],
+  });
+  if (result.canceled || !result.filePaths[0]) return { ok: false, canceled: true };
+  try {
+    const raw = fs.readFileSync(result.filePaths[0], 'utf-8');
+    const data = hydrate(JSON.parse(raw));
+    saveData(data);
+    return { ok: true, data };
+  } catch (err) {
+    return { ok: false, error: String(err) };
+  }
 });
 
 // Define se o overlay aparece em capturas de tela (streaming/gravação).

@@ -147,7 +147,11 @@ const VIEWS = {
   calendar: 'view-calendar',
   notes: 'view-notes',
   noteform: 'view-noteform',
+  listpage: 'view-listpage',
 };
+
+// Última "view de conteúdo" (list/calendar/notes/listpage) — usada no passivo.
+let contentView = 'list';
 
 function showView(name) {
   Object.entries(VIEWS).forEach(([key, id]) => {
@@ -156,6 +160,13 @@ function showView(name) {
   // Destaca o botão da barra correspondente à tela aberta.
   $('#btn-calendar').classList.toggle('toggled', name === 'calendar');
   $('#btn-notes').classList.toggle('toggled', name === 'notes');
+  $('#btn-listpage').classList.toggle('toggled', name === 'listpage');
+}
+
+// Mostra uma view de conteúdo e lembra dela (para restaurar/passivo).
+function showContent(name) {
+  contentView = name;
+  showView(name);
 }
 
 // ============================================================
@@ -230,9 +241,24 @@ function setDisplayMode(mode) {
   $('#panel').classList.toggle('hidden', mode === 'collapsed');
   $('#bubble').classList.toggle('hidden', mode !== 'collapsed');
   $('#btn-passive').classList.toggle('toggled', mode === 'passive');
-  if (mode === 'passive') showView('list');
-  // Re-renderiza para aplicar o filtro (ex.: ocultar concluídas no passivo).
-  renderList();
+
+  // Conteúdo no passivo: se estava na Lista rápida, mostra os itens dela;
+  // caso contrário, mostra os to-dos. No normal, restaura a view de conteúdo.
+  if (mode === 'passive') {
+    if (contentView === 'listpage') {
+      renderListItems();
+      showView('listpage');
+    } else {
+      renderList();
+      showView('list');
+    }
+  } else if (mode === 'normal') {
+    showView(contentView);
+    if (contentView === 'listpage') renderListItems();
+    else renderList();
+  } else {
+    renderList();
+  }
   // Ajusta a altura: automática (abraça os cards) no passivo; fixa no normal.
   applyAppearance();
   // Reavalia click-through imediatamente na posição atual do mouse.
@@ -291,36 +317,54 @@ function activeProfile() {
 }
 
 function renderTabs() {
-  // Perfis
-  const navP = $('#tabs-profile');
-  navP.innerHTML = '';
-  state.config.profiles.forEach((p) => {
-    const b = document.createElement('button');
-    b.className = 'tab' + (p.id === state.config.activeProfileId ? ' active' : '');
-    b.textContent = p.name;
-    b.addEventListener('click', () => {
-      state.config.activeProfileId = p.id;
-      state.config.activeProjectId = p.projects[0].id;
-      persist();
-      renderTabs();
-      renderList();
-      if (isCalendarOpen()) renderCalendar();
-      if (isNotesOpen()) renderNotes();
-    });
-    navP.appendChild(b);
-  });
-
-  // Projetos da seção ativa (+ aba agregada "Tudo" se habilitada)
-  const navJ = $('#tabs-project');
-  navJ.innerHTML = '';
-
-  const selectProject = (id) => {
-    state.config.activeProjectId = id;
+  const refreshViews = () => {
     persist();
     renderTabs();
     renderList();
     if (isCalendarOpen()) renderCalendar();
     if (isNotesOpen()) renderNotes();
+    if (isListPageOpen()) renderListItems();
+  };
+
+  // Seções (+ aba agregada "Tudo" se habilitada)
+  const navP = $('#tabs-profile');
+  navP.innerHTML = '';
+
+  const selectProfile = (id) => {
+    state.config.activeProfileId = id;
+    if (id === ALL_PROFILES) {
+      state.config.activeProjectId = ALL_PROJECTS;
+    } else {
+      const p = state.config.profiles.find((x) => x.id === id);
+      state.config.activeProjectId = p.projects[0].id;
+    }
+    refreshViews();
+  };
+
+  if (state.config.mergeSections) {
+    const b = document.createElement('button');
+    b.className = 'tab' + (isAllSections() ? ' active' : '');
+    b.textContent = 'Tudo';
+    b.addEventListener('click', () => selectProfile(ALL_PROFILES));
+    navP.appendChild(b);
+  }
+
+  state.config.profiles.forEach((p) => {
+    const b = document.createElement('button');
+    b.className = 'tab' + (p.id === state.config.activeProfileId ? ' active' : '');
+    b.textContent = p.name;
+    b.addEventListener('click', () => selectProfile(p.id));
+    navP.appendChild(b);
+  });
+
+  // Projetos da seção ativa (+ aba agregada "Tudo"). Ocultos na aba "Tudo" de seções.
+  const navJ = $('#tabs-project');
+  navJ.innerHTML = '';
+  if (isAllSections()) return;
+
+  const selectProject = (id) => {
+    state.config.activeProjectId = id;
+    refreshViews();
   };
 
   if (activeProfile().mergeProjects) {
@@ -340,21 +384,29 @@ function renderTabs() {
   });
 }
 
-// Id da aba agregada que mostra os to-dos de todos os projetos da seção.
+// Ids das abas agregadas "Tudo" (projetos e seções).
 const ALL_PROJECTS = '__all__';
+const ALL_PROFILES = '__all_sections__';
 
-// Verdadeiro quando a aba ativa é a agregada "Tudo".
 function isAllProjects() {
   return state.config.activeProjectId === ALL_PROJECTS;
 }
+function isAllSections() {
+  return state.config.activeProfileId === ALL_PROFILES;
+}
 
-// Projeto efetivo para criar itens quando na aba "Tudo" (1º projeto da seção).
+// Seção/projeto efetivos para criar itens quando numa aba agregada "Tudo".
+function effectiveProfileId() {
+  return isAllSections() ? state.config.profiles[0].id : state.config.activeProfileId;
+}
 function effectiveProjectId() {
+  if (isAllSections()) return state.config.profiles[0].projects[0].id;
   return isAllProjects() ? activeProfile().projects[0].id : state.config.activeProjectId;
 }
 
-// Filtro de pertencimento de um item à aba atual (seção + projeto ou "Tudo").
+// Filtro de pertencimento de um item à aba atual.
 function inActiveTab(item) {
+  if (isAllSections()) return true; // todas as seções e projetos
   if (item.profileId !== state.config.activeProfileId) return false;
   return isAllProjects() || item.projectId === state.config.activeProjectId;
 }
@@ -387,6 +439,30 @@ function isRecurring(t) {
   return t.recurrence && t.recurrence !== 'none';
 }
 
+// Tempo (ms) que itens concluídos permanecem visíveis (Infinity = sempre).
+function retentionMs() {
+  switch (state.config.completedRetention) {
+    case 'day':
+      return 86400000;
+    case 'week':
+      return 7 * 86400000;
+    case 'month':
+      return 30 * 86400000;
+    default:
+      return Infinity; // 'never' = sempre visível
+  }
+}
+
+// Verdadeiro quando um item concluído já passou do período de retenção
+// (deve ser ocultado da lista, mas permanece salvo na memória).
+function isExpiredDone(item) {
+  if (!item.done) return false;
+  const ms = retentionMs();
+  if (ms === Infinity) return false;
+  const since = item.completedAt || item.createdAt || 0;
+  return Date.now() - since > ms;
+}
+
 function visibleTasks() {
   const { sort, showRecurring, displayMode } = state.config;
   const mult = sort.dir === 'desc' ? -1 : 1;
@@ -397,8 +473,10 @@ function visibleTasks() {
 
   return state.tasks
     .filter(inActiveTab)
-    .filter((t) => showRecurring || !isRecurring(t)) // ocultar recorrentes (opção)
+    // Recorrentes só são ocultadas no MODO PASSIVO quando a opção está desligada.
+    .filter((t) => !(displayMode === 'passive' && !showRecurring && isRecurring(t)))
     .filter((t) => displayMode !== 'passive' || !t.done) // sem concluídas no passivo
+    .filter((t) => !isExpiredDone(t)) // concluídas expiradas somem (mas ficam salvas)
     .sort((a, b) => {
       // Concluídas sempre vão para o final, independente da ordenação.
       if (!!a.done !== !!b.done) return a.done ? 1 : -1;
@@ -419,10 +497,14 @@ function visibleTasks() {
         case 'created':
           cmp = a.createdAt - b.createdAt;
           break;
+        case 'manual':
+          cmp = (a.order || 0) - (b.order || 0);
+          break;
       }
       if (cmp === 0) cmp = prioWeight(a.priorityId) - prioWeight(b.priorityId);
       if (cmp === 0) cmp = a.createdAt - b.createdAt;
-      return cmp * mult;
+      // Na ordenação manual o sentido (asc/desc) não se aplica.
+      return sort.field === 'manual' ? cmp : cmp * mult;
     });
 }
 
@@ -487,6 +569,86 @@ function makeActionBtn(icon, label, extraClass, handler) {
     handler();
   });
   return btn;
+}
+
+// ============================================================
+//  Reordenar cards por arraste (to-dos, notas e lista rápida)
+// ============================================================
+let dragCtx = null; // { type, id }
+
+function listForType(type) {
+  if (type === 'task') return visibleTasks();
+  if (type === 'note') return visibleNotes();
+  return visibleListItems();
+}
+function rerenderType(type) {
+  if (type === 'task') renderList();
+  else if (type === 'note') renderNotes();
+  else renderListItems();
+}
+
+// Torna um card arrastável e tratável como alvo de soltura.
+function attachDrag(li, type, id) {
+  li.draggable = true;
+
+  li.addEventListener('dragstart', (e) => {
+    dragCtx = { type, id };
+    e.dataTransfer.effectAllowed = 'move';
+    setTimeout(() => li.classList.add('dragging'), 0);
+  });
+  li.addEventListener('dragend', () => {
+    li.classList.remove('dragging');
+    dragCtx = null;
+    document
+      .querySelectorAll('.drop-before,.drop-after')
+      .forEach((el) => el.classList.remove('drop-before', 'drop-after'));
+  });
+  li.addEventListener('dragover', (e) => {
+    if (!dragCtx || dragCtx.type !== type || dragCtx.id === id) return;
+    e.preventDefault();
+    const r = li.getBoundingClientRect();
+    const before = e.clientY - r.top < r.height / 2;
+    li.classList.toggle('drop-before', before);
+    li.classList.toggle('drop-after', !before);
+  });
+  li.addEventListener('dragleave', () =>
+    li.classList.remove('drop-before', 'drop-after')
+  );
+  li.addEventListener('drop', (e) => {
+    if (!dragCtx || dragCtx.type !== type || dragCtx.id === id) return;
+    e.preventDefault();
+    const before = li.classList.contains('drop-before');
+    const draggedId = dragCtx.id;
+    li.classList.remove('drop-before', 'drop-after');
+    reorderItem(type, draggedId, id, before);
+  });
+}
+
+// Reordena: move draggedId para antes/depois de targetId, reatribui `order`.
+function reorderItem(type, draggedId, targetId, before) {
+  const visible = listForType(type);
+  const dragged = visible.find((x) => x.id === draggedId);
+  if (!dragged) return;
+
+  const rest = visible.filter((x) => x.id !== draggedId);
+  const ti = rest.findIndex((x) => x.id === targetId);
+  if (ti === -1) return;
+  rest.splice(before ? ti : ti + 1, 0, dragged);
+
+  // Reatribui a ordem sequencialmente aos itens visíveis desta aba.
+  rest.forEach((item, i) => {
+    item.order = i;
+  });
+
+  // To-dos: passa a ordenação para "Manual" para a nova ordem valer.
+  if (type === 'task' && state.config.sort.field !== 'manual') {
+    state.config.sort.field = 'manual';
+    const sel = $('#s-sort-field');
+    if (sel) sel.value = 'manual';
+  }
+
+  persist();
+  rerenderType(type);
 }
 
 function renderList() {
@@ -606,6 +768,7 @@ function renderList() {
           rollRecurring(task);
         } else {
           task.done = !task.done;
+          task.completedAt = task.done ? Date.now() : null;
         }
         persist();
         renderList();
@@ -623,6 +786,7 @@ function renderList() {
       li.classList.toggle('expanded');
     });
 
+    if (state.config.displayMode !== 'passive') attachDrag(li, 'task', task.id);
     ul.appendChild(li);
   });
 }
@@ -719,7 +883,7 @@ async function submitForm(e) {
     state.tasks.push({
       id: `t-${Date.now()}-${Math.floor(Math.random() * 1e4)}`,
       ...payload,
-      profileId: state.config.activeProfileId,
+      profileId: effectiveProfileId(),
       projectId: effectiveProjectId(),
       done: false,
       createdAt: Date.now(),
@@ -728,7 +892,7 @@ async function submitForm(e) {
 
   await persist();
   renderList();
-  showView('list');
+  showContent('list');
 }
 
 async function deleteTask(id) {
@@ -756,10 +920,8 @@ function ymd(d) {
 
 // Tarefas da seção/projeto ativos que possuem prazo (respeitando recorrentes).
 function calendarTasks() {
-  const { showRecurring } = state.config;
-  return state.tasks.filter(
-    (t) => inActiveTab(t) && t.deadline && (showRecurring || !isRecurring(t))
-  );
+  // O calendário sempre mostra recorrentes (a opção afeta só o modo passivo).
+  return state.tasks.filter((t) => inActiveTab(t) && t.deadline);
 }
 
 // Dias (chaves YYYY-MM-DD) em que uma tarefa recorrente ocorre dentro de
@@ -985,7 +1147,9 @@ function openFormForDay(dayKey) {
 let editingNoteId = null;
 
 function visibleNotes() {
-  return state.notes.filter(inActiveTab).sort((a, b) => b.createdAt - a.createdAt);
+  return state.notes
+    .filter(inActiveTab)
+    .sort((a, b) => (a.order || 0) - (b.order || 0));
 }
 
 function isNotesOpen() {
@@ -1051,6 +1215,7 @@ function renderNotes() {
       else expandedIds.add(note.id);
       li.classList.toggle('expanded');
     });
+    attachDrag(li, 'note', note.id);
     ul.appendChild(li);
   });
 }
@@ -1117,7 +1282,7 @@ async function submitNoteForm(e) {
     state.notes.push({
       id: `n-${Date.now()}-${Math.floor(Math.random() * 1e4)}`,
       ...payload,
-      profileId: state.config.activeProfileId,
+      profileId: effectiveProfileId(),
       projectId: effectiveProjectId(),
       createdAt: Date.now(),
     });
@@ -1125,7 +1290,7 @@ async function submitNoteForm(e) {
 
   await persist();
   renderNotes();
-  showView('notes');
+  showContent('notes');
 }
 
 async function deleteNote(id) {
@@ -1133,6 +1298,116 @@ async function deleteNote(id) {
   expandedIds.delete(id);
   await persist();
   renderNotes();
+}
+
+// ============================================================
+//  Lista rápida (itens simples vinculados a seção/projeto)
+// ============================================================
+const editingListIds = new Set(); // itens em edição inline
+
+function isListPageOpen() {
+  return !$('#view-listpage').classList.contains('hidden');
+}
+
+function visibleListItems() {
+  return state.listItems
+    .filter(inActiveTab)
+    .filter((it) => !isExpiredDone(it)) // concluídos expirados somem (ficam salvos)
+    .sort((a, b) => {
+      if (!!a.done !== !!b.done) return a.done ? 1 : -1; // concluídos ao fim
+      return (a.order || 0) - (b.order || 0);
+    });
+}
+
+function renderListItems() {
+  const ul = $('#listpage-list');
+  ul.innerHTML = '';
+  const passive = state.config.displayMode === 'passive';
+  const items = visibleListItems().filter((it) => !passive || !it.done);
+  $('#listpage-empty').classList.toggle('hidden', items.length > 0);
+
+  items.forEach((item) => {
+    const li = document.createElement('li');
+    li.className = 'card' + (item.done ? ' done' : '');
+    li.style.setProperty('--card-color', 'var(--accent)');
+
+    // Edição inline (substitui o título por um input)
+    if (editingListIds.has(item.id) && !passive) {
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.value = item.text;
+      const save = () => {
+        const v = input.value.trim();
+        if (v) item.text = v;
+        editingListIds.delete(item.id);
+        persist();
+        renderListItems();
+      };
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') save();
+        else if (e.key === 'Escape') {
+          editingListIds.delete(item.id);
+          renderListItems();
+        }
+      });
+      input.addEventListener('blur', save);
+      li.appendChild(input);
+      ul.appendChild(li);
+      setTimeout(() => input.focus(), 0);
+      return;
+    }
+
+    const top = document.createElement('div');
+    top.className = 'card__top';
+    const title = document.createElement('span');
+    title.className = 'card__title';
+    title.textContent = item.text;
+    top.appendChild(title);
+    li.appendChild(top);
+
+    const actions = document.createElement('div');
+    actions.className = 'card__actions';
+    actions.append(
+      makeActionBtn(item.done ? '↺' : '✓', item.done ? 'Reabrir' : 'Concluir', '', () => {
+        item.done = !item.done;
+        item.completedAt = item.done ? Date.now() : null;
+        persist();
+        renderListItems();
+      }),
+      makeActionBtn('✎', 'Editar', '', () => {
+        editingListIds.add(item.id);
+        renderListItems();
+      }),
+      makeActionBtn('🗑', 'Excluir', 'icon-btn--danger', () => {
+        state.listItems = state.listItems.filter((x) => x.id !== item.id);
+        persist();
+        renderListItems();
+      })
+    );
+    li.appendChild(actions);
+
+    if (!passive) attachDrag(li, 'list', item.id);
+    ul.appendChild(li);
+  });
+}
+
+function addListItem(text) {
+  const t = text.trim();
+  if (!t) return;
+  const maxOrder = state.listItems
+    .filter(inActiveTab)
+    .reduce((m, x) => Math.max(m, x.order || 0), -1);
+  state.listItems.push({
+    id: `l-${Date.now()}-${Math.floor(Math.random() * 1e4)}`,
+    text: t,
+    done: false,
+    profileId: effectiveProfileId(),
+    projectId: effectiveProjectId(),
+    order: maxOrder + 1,
+    createdAt: Date.now(),
+  });
+  persist();
+  renderListItems();
 }
 
 // ============================================================
@@ -1147,6 +1422,8 @@ function renderSettings() {
   $('#s-stream').checked = state.config.showWhenStreaming;
   $('#s-recurring').checked = state.config.showRecurring;
   $('#s-badge').checked = state.config.showBubbleBadge;
+  $('#s-retention').value = state.config.completedRetention;
+  $('#s-merge-sections').checked = state.config.mergeSections;
   $('#s-sort-field').value = state.config.sort.field;
   $('#s-sort-dir').value = state.config.sort.dir;
   renderPriorityEditor();
@@ -1759,7 +2036,10 @@ function initDrag() {
 // ============================================================
 function bindEvents() {
   $('#btn-add').addEventListener('click', () => openForm(null));
-  $('#btn-cancel').addEventListener('click', () => showView('list'));
+  $('#btn-cancel').addEventListener('click', () => {
+    renderList();
+    showContent('list');
+  });
   $('#task-form').addEventListener('submit', submitForm);
 
   $('#btn-attach').addEventListener('click', async () => {
@@ -1788,10 +2068,11 @@ function bindEvents() {
   // Calendário: o botão alterna entre lista e calendário.
   $('#btn-calendar').addEventListener('click', () => {
     if (isCalendarOpen()) {
-      showView('list');
+      renderList();
+      showContent('list');
     } else {
       renderCalendar();
-      showView('calendar');
+      showContent('calendar');
     }
   });
   $('#cal-prev').addEventListener('click', () => {
@@ -1814,34 +2095,86 @@ function bindEvents() {
   // Notas: o botão alterna entre lista de tarefas e lista de notas.
   $('#btn-notes').addEventListener('click', () => {
     if (isNotesOpen()) {
-      showView('list');
+      renderList();
+      showContent('list');
     } else {
       renderNotes();
-      showView('notes');
+      showContent('notes');
     }
   });
   $('#btn-add-note').addEventListener('click', () => openNoteForm(null));
   $('#note-form').addEventListener('submit', submitNoteForm);
   $('#btn-note-cancel').addEventListener('click', () => {
     renderNotes();
-    showView('notes');
+    showContent('notes');
   });
   $('#btn-note-delete').addEventListener('click', () => {
     if (editingNoteId) deleteNote(editingNoteId);
-    showView('notes');
+    showContent('notes');
+  });
+
+  // Lista rápida: o botão alterna entre to-dos e a lista rápida.
+  $('#btn-listpage').addEventListener('click', () => {
+    if (isListPageOpen()) {
+      renderList();
+      showContent('list');
+    } else {
+      renderListItems();
+      showContent('listpage');
+    }
+  });
+  $('#quick-add').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const input = $('#quick-input');
+    addListItem(input.value);
+    input.value = '';
+    input.focus();
+  });
+  $('#quick-clear').addEventListener('click', () => {
+    // Remove todos os itens da lista da aba atual.
+    const ids = new Set(visibleListItems().map((i) => i.id));
+    if (!ids.size) return;
+    state.listItems = state.listItems.filter((i) => !ids.has(i.id));
+    persist();
+    renderListItems();
   });
 
   $('#btn-settings').addEventListener('click', () => {
     renderSettings();
     showView('settings');
   });
-  $('#btn-settings-close').addEventListener('click', () => showView('list'));
+  $('#btn-settings-close').addEventListener('click', () => {
+    renderList();
+    showContent('list');
+  });
 
   $('#btn-collapse').addEventListener('click', () => setDisplayMode('collapsed'));
   $('#bubble').addEventListener('click', () => setDisplayMode('normal'));
   $('#btn-quit').addEventListener('click', () => window.api.quit());
 
   bindUpdate();
+
+  // Exportar / importar dados (backup)
+  $('#btn-export').addEventListener('click', async () => {
+    const r = await window.api.exportData(state);
+    const status = $('#data-status');
+    if (r.ok) status.textContent = `Exportado para: ${r.path}`;
+    else if (!r.canceled) status.textContent = `Erro ao exportar: ${r.error || ''}`;
+  });
+  $('#btn-import').addEventListener('click', async () => {
+    if (!confirm('Importar substituirá todos os dados atuais. Deseja continuar?')) return;
+    const r = await window.api.importData();
+    const status = $('#data-status');
+    if (r.ok) {
+      state = r.data;
+      refreshAllFromState();
+      renderSettings();
+      showView('settings');
+      status.textContent = 'Dados importados com sucesso.';
+    } else if (!r.canceled) {
+      status.textContent = `Erro ao importar: ${r.error || ''}`;
+    }
+  });
 
   // Aparência ao vivo
   $('#s-opacity').addEventListener('input', (e) => {
@@ -1891,6 +2224,13 @@ function bindEvents() {
     updateBubbleBadge();
   });
 
+  $('#s-retention').addEventListener('change', (e) => {
+    state.config.completedRetention = e.target.value;
+    persist();
+    renderList();
+    if (isListPageOpen()) renderListItems();
+  });
+
   $('#s-sort-field').addEventListener('change', (e) => {
     state.config.sort.field = e.target.value;
     persist();
@@ -1914,6 +2254,20 @@ function bindEvents() {
     persist();
     renderSettings();
     fillPrioritySelect();
+  });
+
+  $('#s-merge-sections').addEventListener('change', (e) => {
+    state.config.mergeSections = e.target.checked;
+    // Se desligou enquanto a aba "Tudo" de seções estava ativa, volta à 1ª seção.
+    if (!e.target.checked && isAllSections()) {
+      state.config.activeProfileId = state.config.profiles[0].id;
+      state.config.activeProjectId = state.config.profiles[0].projects[0].id;
+    }
+    persist();
+    renderTabs();
+    renderList();
+    if (isCalendarOpen()) renderCalendar();
+    if (isNotesOpen()) renderNotes();
   });
 
   $('#btn-add-profile').addEventListener('click', () => {
@@ -1995,6 +2349,17 @@ function bindUpdate() {
   });
 }
 
+// Reaplica toda a UI a partir do `state` (usado após importar dados).
+function refreshAllFromState() {
+  applyTheme();
+  applyStreamVisibility();
+  fillPrioritySelect();
+  if (deadlinePicker) deadlinePicker.refreshTrigger();
+  if (dayPicker) dayPicker.refreshTrigger();
+  renderTabs();
+  setDisplayMode(state.config.displayMode || 'normal'); // aplica aparência + render
+}
+
 // ============================================================
 //  Init
 // ============================================================
@@ -2017,7 +2382,7 @@ async function init() {
   bindTabsWheel();
   renderTabs();
   renderList();
-  showView('list');
+  showContent('list');
   setDisplayMode(state.config.displayMode || 'normal');
 }
 

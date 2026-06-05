@@ -3,6 +3,8 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('api', {
   loadData: () => ipcRenderer.invoke('data:load'),
   saveData: (data) => ipcRenderer.invoke('data:save', data),
+  exportData: (data) => ipcRenderer.invoke('data:export', data),
+  importData: () => ipcRenderer.invoke('data:import'),
 
   // Click-through: avisa o main quando o cursor entra/sai de zonas interativas.
   setInteractive: (interactive) =>
