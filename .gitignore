@@ -4,6 +4,9 @@ node_modules/
 # Saída de build
 dist/
 
+# Backups de dados exportados pelo app
+todo-overlay-backup*.json
+
 # Segredos / variáveis de ambiente
 .env
 .env.*
