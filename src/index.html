@@ -26,6 +26,7 @@
             <button id="btn-calendar" class="round-btn" title="Calendário">📅</button>
             <button id="btn-notes" class="round-btn" title="Notas">🗒</button>
             <button id="btn-listpage" class="round-btn" title="Lista rápida">📋</button>
+            <button id="btn-concluded" class="round-btn" title="Concluídos">✔</button>
             <button id="btn-cardmode" class="round-btn" title="Alternar modo do card (compacto/detalhado)">▤</button>
             <button id="btn-passive" class="round-btn" title="Modo passivo (cards sem botões) — Ctrl+Alt+M para voltar">👁</button>
             <button id="btn-enlarge" class="round-btn" title="Modo ampliado (tela cheia com margens)">⛶</button>
@@ -38,6 +39,12 @@
         <section id="view-list" class="view">
           <ul id="task-list" class="task-list"></ul>
           <p id="empty-msg" class="empty-msg">Nenhuma tarefa aqui. Clique em + para adicionar.</p>
+        </section>
+
+        <!-- CONCLUÍDOS (arquivo de to-dos concluídos) -->
+        <section id="view-concluded" class="view hidden">
+          <ul id="concluded-list" class="task-list"></ul>
+          <p id="concluded-empty" class="empty-msg">Nenhum to-do concluído aqui.</p>
         </section>
 
         <!-- LISTA RÁPIDA -->

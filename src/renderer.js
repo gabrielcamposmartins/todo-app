@@ -148,6 +148,7 @@ const VIEWS = {
   notes: 'view-notes',
   noteform: 'view-noteform',
   listpage: 'view-listpage',
+  concluded: 'view-concluded',
 };
 
 // Última "view de conteúdo" (list/calendar/notes/listpage) — usada no passivo.
@@ -161,12 +162,22 @@ function showView(name) {
   $('#btn-calendar').classList.toggle('toggled', name === 'calendar');
   $('#btn-notes').classList.toggle('toggled', name === 'notes');
   $('#btn-listpage').classList.toggle('toggled', name === 'listpage');
+  $('#btn-concluded').classList.toggle('toggled', name === 'concluded');
 }
 
 // Mostra uma view de conteúdo e lembra dela (para restaurar/passivo).
 function showContent(name) {
   contentView = name;
   showView(name);
+}
+
+// Renderiza a view de conteúdo indicada.
+function renderContentView(name) {
+  if (name === 'calendar') renderCalendar();
+  else if (name === 'notes') renderNotes();
+  else if (name === 'listpage') renderListItems();
+  else if (name === 'concluded') renderConcluded();
+  else renderList();
 }
 
 // ============================================================
@@ -222,7 +233,9 @@ function applyPosition() {
 
 // Atualiza o badge vermelho da bolha com o total de tarefas não concluídas.
 function updateBubbleBadge() {
-  const pending = state.tasks.filter((t) => !t.done).length;
+  const pending = state.tasks.filter(
+    (t) => !t.done && !isRecurringHidden(t)
+  ).length;
   const badge = $('#bubble-badge');
   badge.textContent = pending > 99 ? '99+' : String(pending);
   // Esconde se zerado ou se o contador estiver desativado nas configurações.
@@ -254,8 +267,7 @@ function setDisplayMode(mode) {
     }
   } else if (mode === 'normal') {
     showView(contentView);
-    if (contentView === 'listpage') renderListItems();
-    else renderList();
+    renderContentView(contentView);
   } else {
     renderList();
   }
@@ -324,6 +336,7 @@ function renderTabs() {
     if (isCalendarOpen()) renderCalendar();
     if (isNotesOpen()) renderNotes();
     if (isListPageOpen()) renderListItems();
+    if (isConcludedOpen()) renderConcluded();
   };
 
   // Seções (+ aba agregada "Tudo" se habilitada)
@@ -439,6 +452,31 @@ function isRecurring(t) {
   return t.recurrence && t.recurrence !== 'none';
 }
 
+// Início do período (hora/dia/mês/ano) que contém a data informada.
+function periodStart(date, rec) {
+  const d = new Date(date);
+  switch (rec) {
+    case 'hourly':
+      return new Date(d.getFullYear(), d.getMonth(), d.getDate(), d.getHours());
+    case 'daily':
+      return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    case 'monthly':
+      return new Date(d.getFullYear(), d.getMonth(), 1);
+    case 'yearly':
+      return new Date(d.getFullYear(), 0, 1);
+    default:
+      return d;
+  }
+}
+
+// Recorrente concluída no período atual fica oculta até o próximo período
+// (ex.: diária concluída hoje só reaparece amanhã). Baseia-se no prazo,
+// que é avançado para a próxima ocorrência ao concluir (rollRecurring).
+function isRecurringHidden(t) {
+  if (!isRecurring(t) || !t.deadline) return false;
+  return Date.now() < periodStart(new Date(t.deadline), t.recurrence).getTime();
+}
+
 // Tempo (ms) que itens concluídos permanecem visíveis (Infinity = sempre).
 function retentionMs() {
   switch (state.config.completedRetention) {
@@ -477,6 +515,7 @@ function visibleTasks() {
     .filter((t) => !(displayMode === 'passive' && !showRecurring && isRecurring(t)))
     .filter((t) => displayMode !== 'passive' || !t.done) // sem concluídas no passivo
     .filter((t) => !isExpiredDone(t)) // concluídas expiradas somem (mas ficam salvas)
+    .filter((t) => !isRecurringHidden(t)) // recorrente concluída some até o próximo período
     .sort((a, b) => {
       // Concluídas sempre vão para o final, independente da ordenação.
       if (!!a.done !== !!b.done) return a.done ? 1 : -1;
@@ -1411,6 +1450,96 @@ function addListItem(text) {
 }
 
 // ============================================================
+//  Concluídos (arquivo de to-dos concluídos, inclui os ocultos pela retenção)
+// ============================================================
+function isConcludedOpen() {
+  return !$('#view-concluded').classList.contains('hidden');
+}
+
+function visibleCompletedTasks() {
+  return state.tasks
+    .filter((t) => inActiveTab(t) && t.done)
+    .sort(
+      (a, b) =>
+        (b.completedAt || b.createdAt || 0) - (a.completedAt || a.createdAt || 0)
+    );
+}
+
+function renderConcluded() {
+  const ul = $('#concluded-list');
+  ul.innerHTML = '';
+  const tasks = visibleCompletedTasks();
+  $('#concluded-empty').classList.toggle('hidden', tasks.length > 0);
+
+  tasks.forEach((task) => {
+    const prio = getPriority(task.priorityId);
+    const li = document.createElement('li');
+    li.className = 'card done';
+    if (expandedIds.has(task.id)) li.classList.add('expanded');
+    li.style.setProperty('--card-color', prio.color);
+
+    const top = document.createElement('div');
+    top.className = 'card__top';
+    const title = document.createElement('span');
+    title.className = 'card__title';
+    title.textContent = task.name;
+    const badge = document.createElement('span');
+    badge.className = 'card__badge';
+    badge.style.background = prio.color;
+    badge.textContent = prio.name;
+    top.append(title, badge);
+    li.appendChild(top);
+
+    if (task.description) {
+      const desc = document.createElement('div');
+      desc.className = 'card__desc';
+      desc.textContent = task.description;
+      li.appendChild(desc);
+    }
+
+    const meta = document.createElement('div');
+    meta.className = 'card__meta';
+    const when = task.completedAt || task.createdAt;
+    if (when) {
+      const span = document.createElement('span');
+      span.textContent = `✓ ${new Date(when).toLocaleString('pt-BR', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      })}`;
+      meta.appendChild(span);
+    }
+    li.appendChild(meta);
+
+    const actions = document.createElement('div');
+    actions.className = 'card__actions';
+    actions.append(
+      makeActionBtn('↺', 'Reabrir', '', () => {
+        task.done = false;
+        task.completedAt = null;
+        persist();
+        renderConcluded();
+      }),
+      makeActionBtn('🗑', 'Excluir', 'icon-btn--danger', () => {
+        deleteTask(task.id).then(() => renderConcluded());
+      })
+    );
+    li.appendChild(actions);
+
+    // Clique expande/recolhe (mostra a descrição completa).
+    li.addEventListener('click', () => {
+      if (expandedIds.has(task.id)) expandedIds.delete(task.id);
+      else expandedIds.add(task.id);
+      li.classList.toggle('expanded');
+    });
+
+    ul.appendChild(li);
+  });
+}
+
+// ============================================================
 //  Configurações
 // ============================================================
 function renderSettings() {
@@ -2129,6 +2258,17 @@ function bindEvents() {
     addListItem(input.value);
     input.value = '';
     input.focus();
+  });
+
+  // Concluídos: alterna entre to-dos e o arquivo de concluídos.
+  $('#btn-concluded').addEventListener('click', () => {
+    if (isConcludedOpen()) {
+      renderList();
+      showContent('list');
+    } else {
+      renderConcluded();
+      showContent('concluded');
+    }
   });
   $('#quick-clear').addEventListener('click', () => {
     // Remove todos os itens da lista da aba atual.

@@ -1,6 +1,6 @@
 {
   "name": "todo-overlay",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Overlay de lista de tarefas transparente, sempre no topo e com click-through.",
   "main": "main.js",
   "scripts": {
